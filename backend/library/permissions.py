@@ -50,3 +50,16 @@ class IsReaderOrLibrarian(permissions.BasePermission):
             and request.user.is_authenticated
             and (request.user.has_role(roles.READER_ROLE) or request.user.has_role(roles.LIBRARIAN_ROLE))
         )
+
+
+class IsLibrarianOrAdmin(permissions.BasePermission):
+    """Доступ для библиотекарей и администраторов."""
+
+    message = "Доступ запрещён для этой роли."
+
+    def has_permission(self, request, view):
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and (request.user.has_role(roles.LIBRARIAN_ROLE) or request.user.has_role(roles.ADMIN_ROLE))
+        )
