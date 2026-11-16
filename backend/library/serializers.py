@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from library import constants, models
+from library.services import Conflict
 
 
 class AuthorSerializer(serializers.ModelSerializer):
@@ -42,6 +43,7 @@ class BookGenreSerializer(serializers.ModelSerializer):
 class BookSerializer(serializers.ModelSerializer):
     """Сериализатор книги каталога."""
 
+    isbn = serializers.CharField(max_length=20)
     authors = serializers.PrimaryKeyRelatedField(
         many=True, queryset=models.Author.objects.all(), required=False
     )
@@ -61,6 +63,13 @@ class BookSerializer(serializers.ModelSerializer):
             "authors",
             "genres",
         ]
+
+    def validate(self, attrs):
+        isbn = attrs.get("isbn")
+        instance_pk = self.instance.pk if self.instance else None
+        if isbn and models.Book.objects.filter(isbn=isbn).exclude(pk=instance_pk).exists():
+            raise Conflict("Книга с таким ISBN уже существует.")
+        return attrs
 
     def create(self, validated_data):
         authors = validated_data.pop("authors", [])
@@ -86,20 +95,39 @@ class BookSerializer(serializers.ModelSerializer):
 class BookCopySerializer(serializers.ModelSerializer):
     """Сериализатор физического экземпляра книги."""
 
+    book = serializers.PrimaryKeyRelatedField(queryset=models.Book.objects.all(), required=False)
+    inventory_number = serializers.CharField(max_length=64)
+
     class Meta:
         model = models.BookCopy
         fields = ["id", "book", "inventory_number", "status"]
+
+    def validate(self, attrs):
+        inventory_number = attrs.get("inventory_number")
+        instance_pk = self.instance.pk if self.instance else None
+        if inventory_number and models.BookCopy.objects.filter(
+            inventory_number=inventory_number
+        ).exclude(pk=instance_pk).exists():
+            raise Conflict("Инвентарный номер уже используется.")
+        return attrs
 
 
 class ReaderSerializer(serializers.ModelSerializer):
     """Сериализатор читателя / регистрации читателя."""
 
+    email = serializers.EmailField(max_length=254)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True, style={"input_type": "password"})
 
     class Meta:
         model = models.Reader
         fields = ["id", "email", "password", "full_name", "phone", "status", "registered_at", "date_joined"]
         read_only_fields = ["id", "status", "registered_at", "date_joined"]
+
+    def validate_email(self, value):
+        instance = self.instance
+        if models.Reader.objects.filter(email=value).exclude(pk=instance.pk if instance else None).exists():
+            raise Conflict("Пользователь с таким email уже зарегистрирован.")
+        return value
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)

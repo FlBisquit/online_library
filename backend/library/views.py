@@ -99,6 +99,10 @@ class BookCopyListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(book_id=book_id)
         return queryset
 
+    def perform_create(self, serializer):
+        book = models.Book.objects.get(pk=self.kwargs.get("book_id"))
+        serializer.save(book=book)
+
 
 class ReaderCreateView(generics.CreateAPIView):
     """Регистрация читателя."""
@@ -121,7 +125,7 @@ class ReaderDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        return [IsAuthenticated]
+        return [IsAuthenticated()]
 
     def get_object(self):
         reader = _get_reader_or_none(self.kwargs.get("pk"))
