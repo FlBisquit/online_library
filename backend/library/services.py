@@ -181,6 +181,29 @@ def _promote_next(book, available_copy):
     """Переход следующего читателя из очереди после освобождения экземпляра."""
     if available_copy is None:
         return None
+    now = timezone.now()
+    stale = (
+        models.Reservation.objects
+        .select_for_update()
+        .filter(
+            book=book,
+            status=models.Reservation.Status.ACTIVE,
+            expires_at__lt=now,
+        )
+        .first()
+    )
+    if stale is not None:
+        stale.status = models.Reservation.Status.EXPIRED
+        stale.save(update_fields=["status"])
+        stale_copy = (
+            models.BookCopy.objects.select_for_update()
+            .filter(book=book, status=models.BookCopy.Status.RESERVED)
+            .first()
+        )
+        if stale_copy is not None:
+            stale_copy.status = models.BookCopy.Status.AVAILABLE
+            stale_copy.save(update_fields=["status"])
+
     next_reservation = (
         models.Reservation.objects
         .select_for_update()
