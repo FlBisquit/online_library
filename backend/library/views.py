@@ -156,12 +156,23 @@ class ReaderIssuesView(APIView):
         return Response(serializer.data)
 
 
-class IssueCreateView(APIView):
-    """Выдача экземпляра читателю."""
+class IssueListView(generics.ListCreateAPIView):
+    """Список выдач с фильтрацией (GET) и создание выдачи (POST, библиотекарь/администратор)."""
 
+    serializer_class = IssueSerializer
     permission_classes = [IsLibrarianOrAdmin]
 
-    def post(self, request, *args, **kwargs):
+    def get_queryset(self):
+        queryset = models.Issue.objects.select_related("reader", "copy", "copy__book").all()
+        status_value = self.request.query_params.get("status")
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        reader_id = self.request.query_params.get("reader_id")
+        if reader_id:
+            queryset = queryset.filter(reader_id=reader_id)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
         reader_id = request.data.get("reader_id")
         copy_id = request.data.get("copy_id")
         if not reader_id or not copy_id:
@@ -172,6 +183,16 @@ class IssueCreateView(APIView):
         issue = services.issue_copy(reader_id, copy_id, user=request.user)
         serializer = IssueSerializer(issue, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ReaderListView(generics.ListAPIView):
+    """Список читателей (панель администратора)."""
+
+    serializer_class = ReaderSerializer
+    permission_classes = [IsLibrarianOrAdmin]
+
+    def get_queryset(self):
+        return models.Reader.objects.all()
 
 
 class IssueReturnView(APIView):
