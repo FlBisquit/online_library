@@ -1,0 +1,28 @@
+# Byte-compiled / cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+backend/venv/
+frontend/node_modules/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Database
+db.sqlite3
+backend/db.sqlite3
+*.sqlite3
+
+# Build output
+frontend/dist/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

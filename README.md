@@ -7,8 +7,10 @@ waiting queue and reservations of returned copies.
 ## Tech Stack
 
 - Backend: Django + Django REST Framework
-- Frontend: React
-- Database: SQLite (for initial development)
+- Frontend: React (Vite)
+- Database: MySQL / MariaDB
+- Authentication: JWT (djangorestframework-simplejwt, refresh token blacklist)
+- AI agent: Aider
 
 ## Project Structure
 
@@ -17,6 +19,7 @@ fin_proj/
 ├── backend/          # Django backend
 │   ├── manage.py
 │   ├── requirements.txt
+│   ├── .env.example
 │   ├── config/       # Django project configuration
 │   │   ├── settings.py
 │   │   ├── urls.py
@@ -27,8 +30,14 @@ fin_proj/
 │       ├── apps.py
 │       ├── models.py
 │       ├── serializers.py
+│       ├── services.py
 │       ├── views.py
 │       ├── urls.py
+│       ├── permissions.py
+│       ├── roles.py
+│       ├── constants.py
+│       ├── migrations/
+│       ├── management/commands/load_demo_data.py
 │       └── tests.py
 ├── frontend/         # React frontend
 │   ├── index.html
@@ -38,8 +47,17 @@ fin_proj/
 │   └── src/
 │       ├── main.jsx
 │       ├── App.jsx
-│       └── api/
-│           └── client.js
+│       ├── styles.css
+│       ├── api/
+│       │   └── client.js
+│       ├── auth/
+│       │   └── AuthContext.jsx
+│       └── pages/
+│           ├── LoginPage.jsx
+│           ├── CatalogPage.jsx
+│           ├── MyLoansPage.jsx
+│           ├── LibrarianPage.jsx
+│           └── AdminPage.jsx
 ├── docs/
 └── AI_LOG.md
 ```
@@ -55,6 +73,9 @@ source venv/bin/activate        # Linux / macOS
 # venv\Scripts\activate         # Windows
 
 pip install -r requirements.txt
+cp .env.example .env             # при необходимости скорректировать DATABASE_URL / SECRET_KEY
+python manage.py migrate
+python manage.py load_demo_data
 python manage.py runserver
 ```
 
@@ -72,3 +93,45 @@ Frontend will be available at http://localhost:5173
 
 The Vite dev server proxies `/api` requests to the Django backend
 (see `frontend/vite.config.js` and `frontend/.env`).
+
+## Tests
+
+Backend (Django REST Framework):
+
+```bash
+cd backend
+python manage.py test
+```
+
+Frontend: сборка проверяется командой `npm run build`.
+
+## Demo data
+
+```bash
+cd backend
+python manage.py load_demo_data
+```
+
+Загружает демо-набор: 24 книги, 48 экземпляров, 48 выдач, 8 читателей и 1 бронь.
+
+## Test accounts
+
+| Role          | Email                    | Password         |
+|---------------|--------------------------|------------------|
+| Администратор | admin@library.local      | AdminPass123    |
+| Библиотекарь | librarian@library.local  | LibrarianPass123 |
+| Читатель      | reader0@library.local    | ReaderPass123   |
+| ...           | reader1..7@library.local | ReaderPass123   |
+
+## Environment variables (backend/.env)
+
+```
+DEBUG=True
+SECRET_KEY=change-me-to-a-long-random-secret-key
+ALLOWED_HOSTS=localhost,127.0.0.1,::1
+DATABASE_URL=mysql://user:password@127.0.0.1:3306/library
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+CSRF_TRUSTED_ORIGINS=http://localhost:8000
+```
+
+Для продакшена замените значения секретов и расширьте `ALLOWED_HOSTS`.

@@ -1,0 +1,10 @@
+# Aider configuration for the library project.
+
+model: gpt-4o
+autocommit: false
+yes: false
+
+# Project context: backend (Django) and frontend (React).
+map:
+  - backend/
+  - frontend/
