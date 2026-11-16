@@ -27,5 +27,9 @@
 ## 3. Осталось
 
 - [ ] Финальная полная проверка: прогон всех backend-тестов, сборка frontend.
-- [ ] Заполнение `docs/AI_LOG.md`, `docs/AI_REVIEW.md`, `docs/prompts/`.
-- [ ] `README.md` — финальная версия (в процессе).
+
+## 4. Итоговое состояние
+
+- Backend готов (MySQL, JWT, API, тесты, demo data).
+- Frontend готов (React-экраны).
+- Документация дополнена (SPEC, PLAN, AI_REVIEW, AI_LOG, prompts, conventions, aider config).
