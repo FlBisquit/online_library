@@ -117,11 +117,15 @@ class ReaderSerializer(serializers.ModelSerializer):
 
     email = serializers.EmailField(max_length=254)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True, style={"input_type": "password"})
+    groups = serializers.SerializerMethodField()
 
     class Meta:
         model = models.Reader
-        fields = ["id", "email", "password", "full_name", "phone", "status", "registered_at", "date_joined"]
+        fields = ["id", "email", "password", "full_name", "phone", "status", "registered_at", "date_joined", "groups"]
         read_only_fields = ["id", "status", "registered_at", "date_joined"]
+
+    def get_groups(self, obj):
+        return [group.name for group in obj.groups.all()]
 
     def validate_email(self, value):
         instance = self.instance
