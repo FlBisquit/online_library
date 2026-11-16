@@ -44,6 +44,7 @@ class Reader(AbstractBaseUser, PermissionsMixin):
     registered_at = models.DateTimeField(default=timezone.now)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     is_superuser = models.BooleanField(default=False)
+    is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)
 
     USERNAME_FIELD = "email"
