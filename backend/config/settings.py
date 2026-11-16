@@ -33,6 +33,8 @@ INSTALLED_APPS = [
     "library",
 ]
 
+AUTH_USER_MODEL = "library.Reader"
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",

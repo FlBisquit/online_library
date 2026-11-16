@@ -1,5 +1,86 @@
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.core.validators import validate_email
 from django.db import models
 from django.db.models import CheckConstraint, F, Q
+from django.utils import timezone
+
+
+class ReaderManager(BaseUserManager):
+    """Менеджер пользователей библиотеки (Reader) с авторизацией по email."""
+
+    use_in_migrations = True
+
+    def _create_user(self, email, password, **extra_fields):
+        if not email:
+            raise ValueError("The email must be set")
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_user(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("status", Reader.Status.ACTIVE)
+        return self._create_user(email, password, **extra_fields)
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("status", Reader.Status.ACTIVE)
+        extra_fields.setdefault("is_superuser", True)
+        return self._create_user(email, password, **extra_fields)
+
+
+class Reader(AbstractBaseUser, PermissionsMixin):
+    """Читатель — пользователь библиотеки (учётная запись для JWT)."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "ACTIVE"
+        BLOCKED = "BLOCKED"
+        SUSPENDED = "SUSPENDED"
+
+    email = models.EmailField(unique=True, max_length=254)
+    password = models.CharField(max_length=128, blank=True, default="")
+    full_name = models.CharField(max_length=300)
+    phone = models.CharField(max_length=30, null=True, blank=True)
+    registered_at = models.DateTimeField(default=timezone.now)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    is_superuser = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(default=timezone.now)
+
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["full_name"]
+
+    objects = ReaderManager()
+
+    class Meta:
+        verbose_name = "Читатель"
+        verbose_name_plural = "Читатели"
+        ordering = ["id"]
+        constraints = [
+            CheckConstraint(
+                condition=Q(status__in=["ACTIVE", "BLOCKED", "SUSPENDED"]),
+                name="check_reader_status_valid",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        validate_email(self.email)
+
+    def has_role(self, role_name):
+        """Проверка принадлежности пользователя к роли (группе)."""
+        return self.groups.filter(name=role_name).exists()
+
+    def is_reader(self):
+        return self.has_role("reader")
+
+    def is_librarian(self):
+        return self.has_role("librarian")
+
+    def is_admin(self):
+        return self.has_role("admin")
+
+    def __str__(self):
+        return self.full_name or self.email
 
 
 class Author(models.Model):
@@ -108,35 +189,6 @@ class BookCopy(models.Model):
 
     def __str__(self):
         return self.inventory_number
-
-
-class Reader(models.Model):
-    """Читатель."""
-
-    class Status(models.TextChoices):
-        ACTIVE = "ACTIVE"
-        BLOCKED = "BLOCKED"
-        SUSPENDED = "SUSPENDED"
-
-    full_name = models.CharField(max_length=300)
-    email = models.CharField(max_length=254, unique=True)
-    phone = models.CharField(max_length=30, null=True, blank=True)
-    registered_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
-
-    class Meta:
-        verbose_name = "Читатель"
-        verbose_name_plural = "Читатели"
-        ordering = ["id"]
-        constraints = [
-            CheckConstraint(
-                condition=Q(status__in=["ACTIVE", "BLOCKED", "SUSPENDED"]),
-                name="check_reader_status_valid",
-            ),
-        ]
-
-    def __str__(self):
-        return self.full_name
 
 
 class Issue(models.Model):
