@@ -169,7 +169,7 @@ class IssueCreateView(APIView):
                 {"detail": "Необходимо передать reader_id и copy_id."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        issue = services.issue_copy(reader_id, copy_id)
+        issue = services.issue_copy(reader_id, copy_id, user=request.user)
         serializer = IssueSerializer(issue, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -190,7 +190,7 @@ class IssueReturnView(APIView):
                 {"detail": "Недостаточно прав доступа."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        updated = services.return_issue(issue_id)
+        updated = services.return_issue(issue_id, user=user)
         serializer = IssueSerializer(updated, context={"request": request})
         return Response(serializer.data)
 
@@ -236,7 +236,7 @@ class BookQueueListCreateView(APIView):
                 {"detail": "Недостаточно прав доступа."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        reservation = services.join_queue(reader_id, book_id)
+        reservation = services.join_queue(reader_id, book_id, user=user)
         serializer = ReservationSerializer(reservation, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -323,7 +323,7 @@ class ReservationCancelView(APIView):
                 {"detail": "Недостаточно прав доступа."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        reservation, _copy = services.cancel_reservation(reservation.pk)
+        reservation, _copy = services.cancel_reservation(reservation.pk, user=request.user)
         serializer = ReservationSerializer(reservation, context={"request": request})
         return Response(serializer.data)
 

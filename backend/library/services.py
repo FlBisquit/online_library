@@ -20,6 +20,13 @@ def _get_reader(reader_id):
         raise NotFound("Читатель не найден.")
 
 
+def _log_action(user, action, details=None):
+    """Запись действия пользователя в журнал (в рамках уже открытой транзакции)."""
+    if user is None or not user.is_authenticated:
+        return
+    models.ActionLog.objects.create(user=user, action=action, details=details or {})
+
+
 def _get_copy(copy_id):
     try:
         return models.BookCopy.objects.select_for_update().select_related("book").get(pk=copy_id)
@@ -34,7 +41,7 @@ def _get_reservation(reservation_id):
         raise NotFound("Бронирование не найдено.")
 
 
-def issue_copy(reader_id, copy_id):
+def issue_copy(reader_id, copy_id, user=None):
     """Выдача экземпляра читателю (в одной транзакции с изменением статуса)."""
     with transaction.atomic():
         reader = _get_reader(reader_id)
@@ -73,10 +80,12 @@ def issue_copy(reader_id, copy_id):
             reservation.status = models.Reservation.Status.FULFILLED
             reservation.save(update_fields=["status"])
 
+        _log_action(user, "issue.create", {"reader_id": reader.id, "copy_id": copy.id})
+
     return issue
 
 
-def return_issue(issue_id, return_date=None):
+def return_issue(issue_id, return_date=None, user=None):
     """Возврат экземпляра: выдача -> RETURNED, экземпляр -> AVAILABLE."""
     with transaction.atomic():
         try:
@@ -102,10 +111,12 @@ def return_issue(issue_id, return_date=None):
 
         _promote_next(copy.book, copy)
 
+        _log_action(user, "issue.return", {"issue_id": issue.id, "copy_id": copy.id})
+
         return issue
 
 
-def join_queue(reader_id, book_id):
+def join_queue(reader_id, book_id, user=None):
     """Добавление читателя в конец очереди ожидания (бронь PENDING)."""
     reader = _get_reader(reader_id)
     if reader.status != models.Reader.Status.ACTIVE:
@@ -128,10 +139,13 @@ def join_queue(reader_id, book_id):
         queue_date=timezone.now(),
         expires_at=timezone.now() + constants.RESERVATION_PERIOD,
     )
+
+    _log_action(user, "queue.join", {"reader_id": reader.id, "book_id": book_id})
+
     return reservation
 
 
-def cancel_reservation(reservation_id):
+def cancel_reservation(reservation_id, user=None):
     """Отмена бронирования: освобождение экземпляра и продвижение очереди."""
     with transaction.atomic():
         reservation = _get_reservation(reservation_id)
@@ -155,6 +169,10 @@ def cancel_reservation(reservation_id):
             if copy is not None:
                 copy.status = models.BookCopy.Status.AVAILABLE
                 copy.save(update_fields=["status"])
+
+        _promote_next(reservation.book, copy)
+
+        _log_action(user, "reservation.cancel", {"reservation_id": reservation.id, "book_id": reservation.book_id})
 
         return reservation, copy
 

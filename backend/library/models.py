@@ -229,7 +229,6 @@ class Issue(models.Model):
 
 class Reservation(models.Model):
     """Бронирование / очередь ожидания книги."""
-
     class Status(models.TextChoices):
         PENDING = "PENDING"
         ACTIVE = "ACTIVE"
@@ -260,3 +259,20 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"{self.reader.full_name} → {self.book.title} ({self.status})"
+
+
+class ActionLog(models.Model):
+    """Журнал действий пользователей библиотеки."""
+
+    user = models.ForeignKey(Reader, on_delete=models.CASCADE, related_name="action_logs")
+    action = models.CharField(max_length=64)
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Журнал действия"
+        verbose_name_plural = "Журналы действий"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user} — {self.action}"
