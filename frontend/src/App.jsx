@@ -7,8 +7,16 @@ import { LibrarianPage } from "./pages/LibrarianPage";
 import { AdminPage } from "./pages/AdminPage";
 
 export const App = () => {
-  const { user, initialized } = useAuth();
+  const { user, initialized, logout } = useAuth();
   const [activeId, setActiveId] = useState("catalog");
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // Игнорируем ошибки при выходе.
+    }
+  };
 
   if (!initialized) {
     return <div className="page">Загрузка...</div>;
@@ -43,6 +51,9 @@ export const App = () => {
             {tab.label}
           </button>
         ))}
+        <button className="nav-item" onClick={handleLogout}>
+          Выход
+        </button>
       </nav>
       <div className="content">
         {activeTab.component}
