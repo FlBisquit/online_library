@@ -185,3 +185,51 @@ AI Driven Development и приступить к доведению проект
 
 
 
+
+## 2026-11-23 — Frontend stuck on loading, auth restore, API client, registration page
+
+### Задача
+
+- Починить вечную загрузку «Загрузка...» после запуска фронтенда.
+- Восстановление сессии после перезагрузки страницы.
+- API клиент: сборка query string из `params`, обработка 401 (refresh + retry), парсинг ошибок DRF.
+- Добавить страницу регистрации и экран входа/регистрации.
+
+### Что исправлено
+
+- `frontend/src/api/client.js`: `buildUrl` пропускает `undefined`/`null`/пустые значения;
+  401 → одиночный refresh через общий промис (`/token/refresh/`, ротация токенов) + повтор
+  запроса; при неудаче — очистка токенов и вызов `authLostHandler`; парсинг DRF-ошибок
+  (`detail`, `non_field_errors`, поля); `download` для CSV.
+- `frontend/src/auth/AuthContext.jsx`: восстановление сессии через `GET /auth/me/` при наличии
+  access-токена, всегда `setInitialized(true)`; `login`, `register`, `logout`; обработчик
+  потери авторизации (`setAuthLostHandler`).
+- `frontend/src/App.jsx`: рендер `<ActiveComponent />` вместо функции вкладки; вкладки по ролям;
+  logout через контекст.
+- `frontend/src/pages/RegisterPage.jsx` + `LoginPage`: форма регистрации (email, пароль, ФИО, телефон)
+  и переключатель «Вход / Регистрация»; после регистрации — вход.
+
+### Финальные проверки
+
+- Backend: `python manage.py check` — OK; `python manage.py test` — OK (80 тестов);
+  `python manage.py makemigrations --check` — изменений нет.
+- Frontend: `npx vite build` — OK.
+
+### Итоговый статус
+
+Проект в полностью готовом состоянии.
+
+## 2026-11-23 — Follow-up: token rate limit flake in tests
+
+### Задача
+
+- После hardening rate limit для token endpoint (`10/min`) полный прогон тестов падал:
+  `test_token_refresh_and_blacklist` получал `429` вместо ожидаемого `401` после blacklist.
+
+### Что исправлено
+
+- `@override_settings(DEFAULT_THROTTLE_RATES={"token": "1000/min"})` в `LibraryTestCase`.
+
+### Финальные проверки
+
+- `python manage.py test` — OK (80 тестов).
