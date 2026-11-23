@@ -20,6 +20,11 @@ urlpatterns = [
     path("books/", views.BookListCreateView.as_view(), name="book-list"),
     path("books/<int:pk>/", views.BookDetailView.as_view(), name="book-detail"),
     path("books/<int:book_id>/copies/", views.BookCopyListCreateView.as_view(), name="book-copies"),
+    path("copies/<int:pk>/", views.BookCopyDetailView.as_view(), name="copy-detail"),
+    path("authors/", views.AuthorListCreateView.as_view(), name="author-list"),
+    path("authors/<int:pk>/", views.AuthorDetailView.as_view(), name="author-detail"),
+    path("genres/", views.GenreListCreateView.as_view(), name="genre-list"),
+    path("genres/<int:pk>/", views.GenreDetailView.as_view(), name="genre-detail"),
     path("books/<int:book_id>/queue/", views.BookQueueListCreateView.as_view(), name="book-queue"),
     path(
         "books/<int:book_id>/queue/<int:reader_id>/position/",

@@ -63,3 +63,9 @@ class IsLibrarianOrAdmin(permissions.BasePermission):
             and request.user.is_authenticated
             and (request.user.has_role(roles.LIBRARIAN_ROLE) or request.user.has_role(roles.ADMIN_ROLE))
         )
+
+
+class IsCatalogEditor(IsLibrarianOrAdmin):
+    """Изменять каталог могут библиотекарь и администратор."""
+
+    message = "Изменять каталог могут только библиотекарь или администратор."

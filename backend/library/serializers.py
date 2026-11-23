@@ -120,6 +120,30 @@ class BookCopySerializer(serializers.ModelSerializer):
         return attrs
 
 
+class BookCopyUpdateSerializer(serializers.ModelSerializer):
+    """Редактирование экземпляра: инвентарный номер и статус."""
+
+    class Meta:
+        model = models.BookCopy
+        fields = ["inventory_number", "status"]
+
+    def validate(self, attrs):
+        inventory_number = attrs.get("inventory_number")
+        instance_pk = self.instance.pk if self.instance else None
+        if inventory_number and models.BookCopy.objects.filter(
+            inventory_number=inventory_number
+        ).exclude(pk=instance_pk).exists():
+            raise Conflict("Инвентарный номер уже используется.")
+        if attrs.get("status") in (
+            models.BookCopy.Status.ISSUED,
+            models.BookCopy.Status.RESERVED,
+        ):
+            raise Conflict(
+                "Статусы ISSUED и RESERVED выставляются только сервисами библиотеки."
+            )
+        return attrs
+
+
 class ReaderSerializer(serializers.ModelSerializer):
     """Сериализатор читателя / регистрации читателя."""
 

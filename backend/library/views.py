@@ -10,16 +10,21 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from library import models, services
-from library.permissions import IsLibrarian, IsLibrarianOrAdmin
-from library.services import reports as report_services
+from library.pagination import CatalogPagination
+from library.permissions import IsCatalogEditor, IsLibrarianOrAdmin
 from library.serializers import (
     ActionLogSerializer,
+    AuthorSerializer,
     BookCopySerializer,
+    BookCopyUpdateSerializer,
     BookSerializer,
+    GenreSerializer,
     IssueSerializer,
     ReaderSerializer,
     ReservationSerializer,
 )
+from library.services import catalog as catalog_services
+from library.services import reports as report_services
 
 
 def _get_reader_or_none(reader_id):
@@ -87,10 +92,11 @@ class BookListCreateView(generics.ListCreateAPIView):
     """Список книг каталога (поиск / фильтрация / пагинация) и создание книги."""
 
     serializer_class = BookSerializer
+    pagination_class = CatalogPagination
 
     def get_permissions(self):
         if self.request.method == "POST":
-            return [IsLibrarian()]
+            return [IsCatalogEditor()]
         return [AllowAny()]
 
     def get_queryset(self):
@@ -115,13 +121,15 @@ class BookListCreateView(generics.ListCreateAPIView):
         return queryset
 
 
-class BookDetailView(generics.RetrieveAPIView):
-    """Получение книги каталога."""
+class BookDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Просмотр, редактирование и удаление книги каталога."""
 
     serializer_class = BookSerializer
 
     def get_permissions(self):
-        return [AllowAny()]
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsCatalogEditor()]
 
     def get_queryset(self):
         return models.Book.objects.all()
@@ -130,15 +138,19 @@ class BookDetailView(generics.RetrieveAPIView):
         services.expire_reservations(self.kwargs.get("pk"))
         return super().get(request, *args, **kwargs)
 
+    def perform_destroy(self, instance):
+        catalog_services.delete_book(instance.pk)
+
 
 class BookCopyListCreateView(generics.ListCreateAPIView):
     """Список физических экземпляров книги и их добавление."""
 
     serializer_class = BookCopySerializer
+    pagination_class = CatalogPagination
 
     def get_permissions(self):
         if self.request.method == "POST":
-            return [IsLibrarian()]
+            return [IsCatalogEditor()]
         return [AllowAny()]
 
     def get(self, request, *args, **kwargs):
@@ -155,6 +167,104 @@ class BookCopyListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         book = models.Book.objects.get(pk=self.kwargs.get("book_id"))
         serializer.save(book=book)
+
+
+class BookCopyDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Просмотр и редактирование экземпляра книги."""
+
+    def get_serializer_class(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return BookCopySerializer
+        return BookCopyUpdateSerializer
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsCatalogEditor()]
+
+    def get_queryset(self):
+        return models.BookCopy.objects.select_related("book").all()
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get("partial", False))
+        serializer.is_valid(raise_exception=True)
+        updated = catalog_services.update_copy(
+            instance.pk,
+            user=request.user,
+            inventory_number=serializer.validated_data.get("inventory_number"),
+            status=serializer.validated_data.get("status"),
+        )
+        return Response(self.get_serializer(updated).data)
+
+    def perform_destroy(self, instance):
+        catalog_services.delete_copy(instance.pk)
+
+
+class AuthorListCreateView(generics.ListCreateAPIView):
+    """Справочник авторов."""
+
+    serializer_class = AuthorSerializer
+    pagination_class = CatalogPagination
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsCatalogEditor()]
+        return [AllowAny()]
+
+    def get_queryset(self):
+        queryset = models.Author.objects.all().order_by("full_name")
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(full_name__icontains=search)
+        return queryset
+
+
+class AuthorDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Отдельный автор справочника."""
+
+    serializer_class = AuthorSerializer
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsCatalogEditor()]
+
+    def get_queryset(self):
+        return models.Author.objects.all()
+
+
+class GenreListCreateView(generics.ListCreateAPIView):
+    """Справочник жанров."""
+
+    serializer_class = GenreSerializer
+    pagination_class = CatalogPagination
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsCatalogEditor()]
+        return [AllowAny()]
+
+    def get_queryset(self):
+        queryset = models.Genre.objects.all().order_by("name")
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        return queryset
+
+
+class GenreDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Отдельный жанр справочника."""
+
+    serializer_class = GenreSerializer
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsCatalogEditor()]
+
+    def get_queryset(self):
+        return models.Genre.objects.all()
 
 
 class RegisterView(generics.CreateAPIView):
