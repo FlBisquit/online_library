@@ -379,6 +379,30 @@ class CatalogManagementTests(LibraryTestCase):
         self.copy.refresh_from_db()
         self.assertEqual(self.copy.status, models.BookCopy.Status.LOST)
 
+    def test_manual_available_from_issued_or_reserved_returns_409(self):
+        for locked_status in (
+            models.BookCopy.Status.ISSUED,
+            models.BookCopy.Status.RESERVED,
+        ):
+            with self.subTest(status=locked_status):
+                self.copy.status = locked_status
+                self.copy.save(update_fields=["status"])
+                issue = models.Issue.objects.create(
+                    reader=self.reader,
+                    copy=self.copy,
+                    issued_at=timezone.now(),
+                    due_at=timezone.now() + timedelta(days=14),
+                )
+                self.client.force_authenticate(self.librarian)
+                response = self.client.patch(
+                    f"/api/copies/{self.copy.id}/", {"status": "AVAILABLE"}, format="json"
+                )
+                self.assertEqual(response.status_code, 409)
+                self.copy.refresh_from_db()
+                self.assertEqual(self.copy.status, locked_status)
+                issue.refresh_from_db()
+                self.assertEqual(issue.status, models.Issue.Status.ISSUED)
+
     def test_delete_copy_with_issue_returns_409(self):
         models.Issue.objects.create(
             reader=self.reader,
