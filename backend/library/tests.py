@@ -2,6 +2,7 @@
 import base64
 import json
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
@@ -741,3 +742,171 @@ class QueueConcurrencyTests(TransactionTestCase):
         self.assertEqual(results.count(status.HTTP_201_CREATED), 1, results)
         self.assertEqual(results.count(status.HTTP_409_CONFLICT), 9, results)
         self.assertEqual(models.Reservation.objects.count(), 1)
+
+
+class ReservationExpiryTests(LibraryTestCase):
+    """Истечение просроченных резервов и системные действия в журнале."""
+
+    def setUp(self):
+        super().setUp()
+        self.now = timezone.now()
+        self.past = self.now - timedelta(hours=1)
+
+    def _expired_reservation(self, reader, copy, offset=0):
+        return models.Reservation.objects.create(
+            reader=reader,
+            book=self.book,
+            copy=copy,
+            status=models.Reservation.Status.ACTIVE,
+            active_slot=1,
+            queue_date=self.now - timedelta(hours=2) + timedelta(seconds=offset),
+            expires_at=self.past,
+        )
+
+    def _pending_reservation(self, reader, offset=0):
+        return models.Reservation.objects.create(
+            reader=reader,
+            book=self.book,
+            status=models.Reservation.Status.PENDING,
+            active_slot=1,
+            queue_date=self.now - timedelta(hours=1) + timedelta(seconds=offset),
+            expires_at=self.now + timedelta(hours=1),
+        )
+
+    @patch("django.utils.timezone.now")
+    def test_expired_reservation_is_replaced_by_next_in_queue(self, mock_now):
+        mock_now.return_value = self.now
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        expired = self._expired_reservation(self.reader, self.copy)
+        waiting = self._pending_reservation(self.other_reader)
+
+        processed = services.expire_reservations(self.book.id)
+
+        self.assertEqual(len(processed), 1)
+        expired.refresh_from_db()
+        waiting.refresh_from_db()
+        self.copy.refresh_from_db()
+        self.assertEqual(expired.status, models.Reservation.Status.EXPIRED)
+        self.assertIsNone(expired.active_slot)
+        self.assertEqual(waiting.status, models.Reservation.Status.ACTIVE)
+        self.assertEqual(waiting.copy_id, self.copy.id)
+        self.assertEqual(self.copy.status, models.BookCopy.Status.RESERVED)
+        log = models.ActionLog.objects.get(action="reservation.expire")
+        self.assertIsNone(log.user)
+        self.assertEqual(log.details["reservation_id"], expired.id)
+
+    @patch("django.utils.timezone.now")
+    def test_chain_of_three_expired_reservations_processed_in_one_call(self, mock_now):
+        mock_now.return_value = self.now
+        copies = [self.copy] + [
+            models.BookCopy.objects.create(
+                book=self.book,
+                inventory_number=f"INV-{index}",
+                status=models.BookCopy.Status.RESERVED,
+            )
+            for index in (2, 3)
+        ]
+        readers = [self.reader, self.other_reader]
+        for index in (3, 4):
+            readers.append(
+                models.Reader.objects.create_user(
+                    email=f"reader{index}@test.local",
+                    password="ReaderPass123",
+                    full_name=f"Читатель {index}",
+                )
+            )
+        expired = [
+            self._expired_reservation(reader, copy, offset=index)
+            for index, (reader, copy) in enumerate(zip(readers[:3], copies))
+        ]
+        waiting = self._pending_reservation(readers[3], offset=10)
+
+        processed = services.expire_reservations(self.book.id)
+
+        self.assertEqual(len(processed), 3)
+        for reservation in expired:
+            reservation.refresh_from_db()
+            self.assertEqual(reservation.status, models.Reservation.Status.EXPIRED)
+        waiting.refresh_from_db()
+        self.assertEqual(waiting.status, models.Reservation.Status.ACTIVE)
+        self.assertEqual(
+            models.ActionLog.objects.filter(action="reservation.expire").count(),
+            3,
+        )
+
+    @patch("django.utils.timezone.now")
+    def test_issue_copy_on_expired_reservation_returns_409(self, mock_now):
+        mock_now.return_value = self.now
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        self._expired_reservation(self.reader, self.copy)
+        self.client.force_authenticate(self.librarian)
+
+        response = self.client.post(
+            "/api/issues/",
+            {"reader_id": self.reader.id, "copy_id": self.copy.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(models.Issue.objects.count(), 0)
+
+    @patch("django.utils.timezone.now")
+    def test_repeated_expiration_is_idempotent(self, mock_now):
+        mock_now.return_value = self.now
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        expired = self._expired_reservation(self.reader, self.copy)
+        waiting = self._pending_reservation(self.other_reader)
+
+        first = services.expire_reservations(self.book.id)
+        self.assertEqual(len(first), 1)
+        log_count = models.ActionLog.objects.count()
+        second = services.expire_reservations(self.book.id)
+
+        self.assertEqual(second, [])
+        self.assertEqual(models.ActionLog.objects.count(), log_count)
+        expired.refresh_from_db()
+        waiting.refresh_from_db()
+        self.assertEqual(expired.status, models.Reservation.Status.EXPIRED)
+        self.assertEqual(waiting.status, models.Reservation.Status.ACTIVE)
+
+    @patch("django.utils.timezone.now")
+    def test_book_detail_and_copies_list_expire_lazily(self, mock_now):
+        mock_now.return_value = self.now
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        expired = self._expired_reservation(self.reader, self.copy)
+        waiting = self._pending_reservation(self.other_reader)
+
+        detail = self.client.get(f"/api/books/{self.book.id}/")
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        expired.refresh_from_db()
+        waiting.refresh_from_db()
+        self.assertEqual(expired.status, models.Reservation.Status.EXPIRED)
+        self.assertEqual(waiting.status, models.Reservation.Status.ACTIVE)
+
+        copies = self.client.get(f"/api/books/{self.book.id}/copies/")
+        self.assertEqual(copies.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            models.ActionLog.objects.filter(action="reservation.expire").count(),
+            1,
+        )
+
+    @patch("django.utils.timezone.now")
+    def test_join_queue_triggers_expiration(self, mock_now):
+        mock_now.return_value = self.now
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        expired = self._expired_reservation(self.reader, self.copy)
+
+        with self.assertRaises(services.Conflict):
+            services.join_queue(self.other_reader.id, self.book.id)
+
+        expired.refresh_from_db()
+        self.assertEqual(expired.status, models.Reservation.Status.EXPIRED)
+        self.assertEqual(
+            models.ActionLog.objects.filter(action="reservation.expire").count(),
+            1,
+        )
