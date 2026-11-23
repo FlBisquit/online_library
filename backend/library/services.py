@@ -31,6 +31,11 @@ def _log_action(user, action, details=None):
     models.ActionLog.objects.create(user=user, action=action, details=details or {})
 
 
+def _log_system_action(action, details=None):
+    """Системное действие без пользователя (например, истечение резерва)."""
+    models.ActionLog.objects.create(user=None, action=action, details=details or {})
+
+
 def _lock_book(book_id):
     try:
         return models.Book.objects.select_for_update().get(pk=book_id)
@@ -64,11 +69,23 @@ def _clear_reservation_slot(reservation):
 
 def issue_copy(reader_id, copy_id, user=None):
     """Выдача экземпляра читателю (в одной транзакции с изменением статуса)."""
+    # Книгу узнаём без блокировки через экземпляр; истечение обрабатываем лениво.
+    book_id = models.BookCopy.objects.filter(pk=copy_id).values_list("book_id", flat=True).first()
+    if book_id is None:
+        raise NotFound("Экземпляр книги не найден.")
+    expired_for_reader = models.Reservation.objects.filter(
+        reader_id=reader_id,
+        book_id=book_id,
+        status=models.Reservation.Status.ACTIVE,
+        active_slot=1,
+        expires_at__lt=timezone.now(),
+    ).exists()
+    if expired_for_reader:
+        expire_reservations(book_id)
+        raise Conflict("Срок действия бронирования истёк.")
+    expire_reservations(book_id)
+
     with transaction.atomic():
-        # Book блокируется первым: книгу узнаём без блокировки через экземпляр.
-        book_id = models.BookCopy.objects.filter(pk=copy_id).values_list("book_id", flat=True).first()
-        if book_id is None:
-            raise NotFound("Экземпляр книги не найден.")
         book = _lock_book(book_id)
         copy = _lock_copy(copy_id)
 
@@ -117,15 +134,17 @@ def issue_copy(reader_id, copy_id, user=None):
 
 def return_issue(issue_id, return_date=None, user=None):
     """Возврат экземпляра: выдача -> RETURNED, экземпляр -> AVAILABLE/RESERVED."""
+    # Сначала читаем book_id/copy_id без блокировки, затем Book -> BookCopy -> Issue.
+    issue_info = (
+        models.Issue.objects.filter(pk=issue_id)
+        .values("copy__book_id", "copy_id")
+        .first()
+    )
+    if issue_info is None:
+        raise NotFound("Выдача не найдена.")
+    expire_reservations(issue_info["copy__book_id"])
+
     with transaction.atomic():
-        # Сначала читаем book_id/copy_id без блокировки, затем Book -> BookCopy -> Issue.
-        issue_info = (
-            models.Issue.objects.filter(pk=issue_id)
-            .values("copy__book_id", "copy_id")
-            .first()
-        )
-        if issue_info is None:
-            raise NotFound("Выдача не найдена.")
         book = _lock_book(issue_info["copy__book_id"])
         copy = _lock_copy(issue_info["copy_id"])
         try:
@@ -153,6 +172,7 @@ def return_issue(issue_id, return_date=None, user=None):
 
 def join_queue(reader_id, book_id, user=None):
     """Добавление читателя в конец очереди ожидания (бронь PENDING)."""
+    expire_reservations(book_id)
     with transaction.atomic():
         book = _lock_book(book_id)
         reader = _get_reader(reader_id)
@@ -199,14 +219,16 @@ def join_queue(reader_id, book_id, user=None):
 
 def cancel_reservation(reservation_id, user=None):
     """Отмена бронирования: освобождение её экземпляра и продвижение очереди."""
+    book_id = (
+        models.Reservation.objects.filter(pk=reservation_id)
+        .values_list("book_id", flat=True)
+        .first()
+    )
+    if book_id is None:
+        raise NotFound("Бронирование не найдено.")
+    expire_reservations(book_id)
+
     with transaction.atomic():
-        book_id = (
-            models.Reservation.objects.filter(pk=reservation_id)
-            .values_list("book_id", flat=True)
-            .first()
-        )
-        if book_id is None:
-            raise NotFound("Бронирование не найдено.")
         book = _lock_book(book_id)
         # Экземпляр блокируем до бронирования (общий порядок блокировок).
         info = (
@@ -249,30 +271,6 @@ def _promote_next(book, available_copy):
     """Переход следующего читателя из очереди после освобождения экземпляра."""
     if available_copy is None:
         return None
-    now = timezone.now()
-
-    # Сначала блокируем экземпляр просроченного резерва, затем сами бронирования.
-    stale = (
-        models.Reservation.objects.filter(
-            book=book,
-            status=models.Reservation.Status.ACTIVE,
-            expires_at__lt=now,
-        )
-        .order_by("queue_date", "id")
-        .first()
-    )
-    stale_copy = None
-    if stale is not None and stale.copy_id:
-        stale_copy = _lock_copy(stale.copy_id)
-    if stale is not None:
-        if stale_copy is not None and stale_copy.status == models.BookCopy.Status.RESERVED:
-            stale_copy.status = models.BookCopy.Status.AVAILABLE
-            stale_copy.save(update_fields=["status"])
-        stale = models.Reservation.objects.select_for_update().get(pk=stale.pk)
-        stale.status = models.Reservation.Status.EXPIRED
-        stale.active_slot = None
-        stale.save(update_fields=["status", "active_slot"])
-
     next_reservation = (
         models.Reservation.objects.select_for_update()
         .filter(book=book, status=models.Reservation.Status.PENDING, active_slot=1)
@@ -283,57 +281,62 @@ def _promote_next(book, available_copy):
         return None
     next_reservation.status = models.Reservation.Status.ACTIVE
     next_reservation.copy = available_copy
-    next_reservation.expires_at = now + constants.RESERVATION_PERIOD
+    next_reservation.expires_at = timezone.now() + constants.RESERVATION_PERIOD
     next_reservation.save(update_fields=["status", "copy", "expires_at"])
     available_copy.status = models.BookCopy.Status.RESERVED
     available_copy.save(update_fields=["status"])
     return next_reservation
 
 
-def expire_reservations(book=None):
-    """Перевод просроченных резервов в статус EXPIRED и освобождение экземпляров."""
+def expire_reservations(book_id=None):
+    """Истечь все просроченные резервы (опционально только для одной книги).
+
+    Работает в одной транзакции; порядок блокировок: Book -> BookCopy -> Reservation.
+    После каждого истёкшего резерва освобождённый экземпляр сразу передаётся
+    следующему PENDING-бронированию. Повторяем, пока просроченных нет.
+    """
     with transaction.atomic():
         now = timezone.now()
-        expired = models.Reservation.objects.filter(
-            status=models.Reservation.Status.ACTIVE,
-            expires_at__lt=now,
-        )
-        if book is not None:
-            expired = expired.filter(book=book)
-        rows = list(expired.order_by("book_id", "queue_date", "id"))
-        if not rows:
-            return []
-
-        books = {
-            item.id: item
-            for item in models.Book.objects.select_for_update()
-            .filter(pk__in={row.book_id for row in rows})
-            .order_by("id")
-        }
-        copy_ids = {row.copy_id for row in rows if row.copy_id}
-        copies = {
-            item.id: item
-            for item in models.BookCopy.objects.select_for_update()
-            .filter(pk__in=copy_ids)
-            .order_by("id")
-        }
-        reservations = {
-            item.id: item
-            for item in models.Reservation.objects.select_for_update()
-            .filter(pk__in={row.id for row in rows})
-            .order_by("book_id", "queue_date", "id")
-        }
-
         processed = []
-        for row in rows:
-            reservation = reservations[row.id]
-            copy = copies.get(reservation.copy_id)
+        while True:
+            expired = models.Reservation.objects.filter(
+                status=models.Reservation.Status.ACTIVE,
+                expires_at__lt=now,
+            )
+            if book_id is not None:
+                expired = expired.filter(book_id=book_id)
+            candidate = expired.order_by("book_id", "queue_date", "id").first()
+            if candidate is None:
+                break
+
+            book = _lock_book(candidate.book_id)
+            copy = None
+            if candidate.copy_id:
+                copy = _lock_copy(candidate.copy_id)
+            reservation = _lock_reservation(candidate.pk)
+            # Проверка после блокировки: состояние могло измениться.
+            if (
+                reservation.status != models.Reservation.Status.ACTIVE
+                or reservation.expires_at is None
+                or reservation.expires_at >= now
+            ):
+                continue
+
             if copy is not None and copy.status == models.BookCopy.Status.RESERVED:
                 copy.status = models.BookCopy.Status.AVAILABLE
                 copy.save(update_fields=["status"])
             reservation.status = models.Reservation.Status.EXPIRED
             reservation.active_slot = None
             reservation.save(update_fields=["status", "active_slot"])
-            _promote_next(books[reservation.book_id], copy)
+
+            _log_system_action(
+                "reservation.expire",
+                {
+                    "reservation_id": reservation.id,
+                    "book_id": book.id,
+                    "copy_id": copy.id if copy is not None else None,
+                },
+            )
+            _promote_next(book, copy)
             processed.append(reservation)
         return processed

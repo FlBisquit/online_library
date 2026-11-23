@@ -90,6 +90,10 @@ class BookDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         return models.Book.objects.all()
 
+    def get(self, request, *args, **kwargs):
+        services.expire_reservations(self.kwargs.get("pk"))
+        return super().get(request, *args, **kwargs)
+
 
 class BookCopyListCreateView(generics.ListCreateAPIView):
     """Список физических экземпляров книги и их добавление."""
@@ -100,6 +104,10 @@ class BookCopyListCreateView(generics.ListCreateAPIView):
         if self.request.method == "POST":
             return [IsLibrarian()]
         return [AllowAny()]
+
+    def get(self, request, *args, **kwargs):
+        services.expire_reservations(self.kwargs.get("book_id"))
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         book_id = self.kwargs.get("book_id")
