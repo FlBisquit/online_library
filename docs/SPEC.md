@@ -46,12 +46,15 @@
 - `POST /api/token/refresh/` — обновление access token.
 - `POST /api/token/blacklist/` — отзыв refresh token.
 - `GET /api/books/`, `GET /api/books/{id}/` — каталог (поиск, фильтры, пагинация).
-- `POST /api/books/`, `GET /api/books/{book_id}/copies/`, `POST /api/books/{book_id}/copies/` — каталог.
-- `POST /api/readers/` — регистрация читателя.
+- `POST /api/books/`, `PATCH/PUT/DELETE /api/books/{id}/`, `GET /api/books/{book_id}/copies/`, `POST /api/books/{book_id}/copies/`, `PATCH/DELETE /api/copies/{id}/` — каталог.
+- `GET/POST /api/authors/`, `GET/POST /api/genres/` и CRUD `/api/authors/{id}/`, `/api/genres/{id}/` — справочники.
+- `POST /api/auth/register/` — публичная регистрация читателя.
+- `GET/POST /api/users/`, `GET/PATCH /api/users/{id}/` — управление пользователями (только администратор).
 - `GET /api/readers/{id}/`, `GET /api/readers/{id}/issues/` — читатели и история.
 - `GET /api/issues/`, `POST /api/issues/`, `POST /api/issues/{id}/return/` — выдачи.
 - `GET /api/books/{book_id}/queue/`, `POST /api/books/{book_id}/queue/`, `GET /api/books/{book_id}/queue/{reader_id}/position/` — очередь.
 - `GET /api/reservations/{id}/`, `POST /api/reservations/{id}/cancel/` — бронирования.
-- `GET /api/reports/issues/`, `GET /api/reports/cancellations/`, `GET /api/reports/issues/export/` — отчёты.
+- `GET /api/action-log/` — журнал действий.
+- `GET /api/reports/books/`, `GET /api/reports/books/export/` — отчёты.
 
 Полная спецификация API: `docs/API_DESIGN.md`.
