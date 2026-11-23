@@ -1,8 +1,7 @@
 """API views for the library app."""
-import csv
-from datetime import date, datetime
+from datetime import date
 
-from django.http import Http404, HttpResponse
+from django.http import Http404
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -11,6 +10,7 @@ from rest_framework.views import APIView
 
 from library import models, services
 from library.permissions import IsLibrarian, IsLibrarianOrAdmin
+from library.services import reports as report_services
 from library.serializers import (
     ActionLogSerializer,
     BookCopySerializer,
@@ -67,6 +67,19 @@ def _parse_date_param(value, name):
         return date.fromisoformat(value)
     except ValueError:
         raise ValidationError({name: "Используйте формат ГГГГ-ММ-ДД."})
+
+
+def _parse_report_period(params):
+    """Обязательные даты отчёта; мусор или перевёрнутый период -> 400."""
+    date_from = _parse_date_param(params.get("date_from"), "date_from")
+    date_to = _parse_date_param(params.get("date_to"), "date_to")
+    if date_from is None:
+        raise ValidationError({"date_from": "Обязательный параметр."})
+    if date_to is None:
+        raise ValidationError({"date_to": "Обязательный параметр."})
+    if date_from > date_to:
+        raise ValidationError({"date_from": "date_from не может быть позже date_to."})
+    return date_from, date_to
 
 
 class BookListCreateView(generics.ListCreateAPIView):
@@ -457,110 +470,26 @@ class ReservationCancelView(APIView):
         return Response(serializer.data)
 
 
-class IssuesReportView(APIView):
-    """Отчёт: количество выдач по объектам (SQL-агрегация)."""
+class BooksReportView(APIView):
+    """Отчёт по книгам: выдачи, просрочки и отмены за период (SQL-агрегация)."""
 
     permission_classes = [IsLibrarianOrAdmin]
 
     def get(self, request, *args, **kwargs):
-        from django.db.models import Count, Q as DjangoQ
-
-        rows = (
-            models.Issue.objects
-            .values("copy__book_id")
-            .annotate(
-                total=Count("id"),
-                issued=Count("id", filter=DjangoQ(status=models.Issue.Status.ISSUED)),
-                returned=Count("id", filter=DjangoQ(status=models.Issue.Status.RETURNED)),
-                lost=Count("id", filter=DjangoQ(status=models.Issue.Status.LOST)),
-                overdue=Count("id", filter=DjangoQ(status=models.Issue.Status.OVERDUE)),
-            )
-            .order_by("copy__book_id")
-        )
+        date_from, date_to = _parse_report_period(request.query_params)
+        rows = report_services.books_report(date_from, date_to)
         return Response(
             [
                 {
-                    "book_id": row["copy__book_id"],
-                    "total": row["total"],
-                    "issued": row["issued"],
-                    "returned": row["returned"],
-                    "lost": row["lost"],
+                    "book_id": row["id"],
+                    "title": row["title"],
+                    "loans": row["loans"],
                     "overdue": row["overdue"],
+                    "cancellations": row["cancellations"],
                 }
                 for row in rows
             ]
         )
-
-
-class CancellationsReportView(APIView):
-    """Отчёт: количество отмен бронирований за выбранный период."""
-
-    permission_classes = [IsLibrarianOrAdmin]
-
-    def get(self, request, *args, **kwargs):
-        period_start = request.query_params.get("period_start")
-        period_end = request.query_params.get("period_end")
-        queryset = models.Reservation.objects.filter(status=models.Reservation.Status.CANCELLED)
-        if period_start:
-            start = datetime.fromisoformat(period_start).date()
-            queryset = queryset.filter(queue_date__date__gte=start)
-        if period_end:
-            end = datetime.fromisoformat(period_end).date()
-            queryset = queryset.filter(queue_date__date__lte=end)
-        return Response(
-            {
-                "period_start": period_start,
-                "period_end": period_end,
-                "cancelled_count": queryset.count(),
-            }
-        )
-
-
-class IssuesExportView(APIView):
-    """Экспорт отчёта о выдачах в CSV."""
-
-    permission_classes = [IsLibrarianOrAdmin]
-
-    def get(self, request, *args, **kwargs):
-        issues = (
-            models.Issue.objects.select_related("reader", "copy", "copy__book")
-            .order_by("-issued_at")
-        )
-        response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="issues_export.csv"'
-        writer = csv.writer(response)
-        writer.writerow(
-            [
-                "id",
-                "reader_id",
-                "reader_full_name",
-                "copy_id",
-                "inventory_number",
-                "book_id",
-                "book_title",
-                "issued_at",
-                "due_at",
-                "returned_at",
-                "status",
-            ]
-        )
-        for issue in issues:
-            writer.writerow(
-                [
-                    issue.id,
-                    issue.reader_id,
-                    issue.reader.full_name,
-                    issue.copy_id,
-                    issue.copy.inventory_number,
-                    issue.copy.book_id,
-                    issue.copy.book.title,
-                    issue.issued_at,
-                    issue.due_at,
-                    issue.returned_at,
-                    issue.status,
-                ]
-            )
-        return response
 
 
 class ActionLogListView(generics.ListAPIView):
