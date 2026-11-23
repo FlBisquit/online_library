@@ -37,4 +37,5 @@ urlpatterns = [
     path("reports/issues/", views.IssuesReportView.as_view(), name="report-issues"),
     path("reports/cancellations/", views.CancellationsReportView.as_view(), name="report-cancellations"),
     path("reports/issues/export/", views.IssuesExportView.as_view(), name="report-issue-export"),
+    path("action-log/", views.ActionLogListView.as_view(), name="action-log-list"),
 ]

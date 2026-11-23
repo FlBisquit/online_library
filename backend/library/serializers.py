@@ -217,3 +217,31 @@ class ReservationSerializer(serializers.ModelSerializer):
             queue_date=queue_date,
             expires_at=queue_date + constants.RESERVATION_PERIOD,
         )
+
+
+class ActionLogUserSerializer(serializers.ModelSerializer):
+    """Краткие данные пользователя в журнале действий."""
+
+    class Meta:
+        model = models.Reader
+        fields = ["id", "full_name", "email"]
+
+
+class ActionLogSerializer(serializers.ModelSerializer):
+    """Запись журнала: кто, когда и какой статус изменил."""
+
+    user = ActionLogUserSerializer(read_only=True)
+
+    class Meta:
+        model = models.ActionLog
+        fields = [
+            "id",
+            "user",
+            "action",
+            "entity_type",
+            "entity_id",
+            "old_status",
+            "new_status",
+            "created_at",
+            "details",
+        ]

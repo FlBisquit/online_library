@@ -1,16 +1,24 @@
 """API views for the library app."""
 import csv
-from datetime import datetime
+from datetime import date, datetime
 
 from django.http import Http404, HttpResponse
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from library import models, services
 from library.permissions import IsLibrarian, IsLibrarianOrAdmin
-from library.serializers import BookCopySerializer, BookSerializer, IssueSerializer, ReaderSerializer, ReservationSerializer
+from library.serializers import (
+    ActionLogSerializer,
+    BookCopySerializer,
+    BookSerializer,
+    IssueSerializer,
+    ReaderSerializer,
+    ReservationSerializer,
+)
 
 
 def _get_reader_or_none(reader_id):
@@ -39,6 +47,26 @@ def _can_access_reservation(user, reservation):
     if _is_staff(user):
         return True
     return bool(user and user.is_authenticated and user.id == reservation.reader_id)
+
+
+def _parse_int_param(value, name):
+    """Целочисленный query-параметр; мусор -> 400."""
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValidationError({name: "Ожидается целое число."})
+
+
+def _parse_date_param(value, name):
+    """Дата в формате ГГГГ-ММ-ДД; мусор -> 400."""
+    if value in (None, ""):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValidationError({name: "Используйте формат ГГГГ-ММ-ДД."})
 
 
 class BookListCreateView(generics.ListCreateAPIView):
@@ -533,3 +561,43 @@ class IssuesExportView(APIView):
                 ]
             )
         return response
+
+
+class ActionLogListView(generics.ListAPIView):
+    """Журнал действий: кто, когда и какой статус изменил (только сотрудники)."""
+
+    serializer_class = ActionLogSerializer
+    permission_classes = [IsLibrarianOrAdmin]
+
+    def get_queryset(self):
+        params = self.request.query_params
+        queryset = models.ActionLog.objects.select_related("user").order_by(
+            "-created_at", "-id"
+        )
+
+        user_id = _parse_int_param(params.get("user"), "user")
+        if user_id is not None:
+            queryset = queryset.filter(user_id=user_id)
+
+        entity_id = _parse_int_param(params.get("entity_id"), "entity_id")
+        if entity_id is not None:
+            queryset = queryset.filter(entity_id=entity_id)
+
+        entity_type = params.get("entity_type")
+        if entity_type:
+            queryset = queryset.filter(entity_type=entity_type)
+
+        action = params.get("action")
+        if action:
+            queryset = queryset.filter(action=action)
+
+        date_from = _parse_date_param(params.get("date_from"), "date_from")
+        date_to = _parse_date_param(params.get("date_to"), "date_to")
+        if date_from and date_to and date_from > date_to:
+            raise ValidationError({"date_from": "date_from не может быть позже date_to."})
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+
+        return queryset

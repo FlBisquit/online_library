@@ -1351,5 +1351,6 @@ class ActionLogApiTests(LibraryTestCase):
         for index in range(5):
             self._log(user=self.librarian, entity_id=index)
         self.client.force_authenticate(self.librarian)
-        with self.assertNumQueries(2):
+        # Проверка роли + COUNT + SELECT с JOIN пользователя; без запросов на строку.
+        with self.assertNumQueries(3):
             self.client.get("/api/action-log/")
