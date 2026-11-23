@@ -161,3 +161,71 @@ body {
 .book-detail-card h3 {
   margin-top: 0;
 }
+
+.sub-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #e8eef5;
+  color: #3f5470;
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+.btn-secondary {
+  background: #e8eef5;
+  color: #2b3a4a;
+  border: 1px solid #cbd6e2;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid #e2e6ea;
+  border-radius: 8px;
+}
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.log-table th,
+.log-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #eef1f4;
+  vertical-align: top;
+}
+
+.log-table th {
+  background: #f7f9fb;
+  white-space: nowrap;
+}
+
+.log-table tr:last-child td {
+  border-bottom: none;
+}
+
+.log-filters {
+  max-width: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-filters .input {
+  width: auto;
+  min-width: 155px;
+  margin-bottom: 0;
+}

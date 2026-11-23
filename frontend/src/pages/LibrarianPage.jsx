@@ -4,9 +4,11 @@ import { useAuth } from "../auth/AuthContext";
 import { Loading } from "../components/Loading";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorMessage } from "../components/ErrorMessage";
+import { ActionLogPage } from "./ActionLogPage";
 
 export const LibrarianPage = () => {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState("issues");
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -48,6 +50,24 @@ export const LibrarianPage = () => {
   return (
     <div className="page">
       <h2>Панель библиотекаря</h2>
+      <div className="sub-tabs">
+        <button
+          className={`nav-item ${activeTab === "issues" ? "active" : ""}`}
+          onClick={() => setActiveTab("issues")}
+        >
+          Выдачи
+        </button>
+        <button
+          className={`nav-item ${activeTab === "log" ? "active" : ""}`}
+          onClick={() => setActiveTab("log")}
+        >
+          Журнал
+        </button>
+      </div>
+      {activeTab === "log" ? (
+        <ActionLogPage readOnly />
+      ) : (
+        <>
       <div className="filter-row">
         <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">Все статусы</option>
@@ -75,6 +95,8 @@ export const LibrarianPage = () => {
           </div>
         ))}
       </div>
+        </>
+      )}
     </div>
   );
 };

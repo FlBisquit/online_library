@@ -4,9 +4,11 @@ import { useAuth } from "../auth/AuthContext";
 import { Loading } from "../components/Loading";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorMessage } from "../components/ErrorMessage";
+import { ActionLogPage } from "./ActionLogPage";
 
 export const AdminPage = () => {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState("manage");
   const [books, setBooks] = useState([]);
   const [readers, setReaders] = useState([]);
   const [loadingBooks, setLoadingBooks] = useState(false);
@@ -99,6 +101,24 @@ export const AdminPage = () => {
   return (
     <div className="page">
       <h2>Панель администратора</h2>
+      <div className="sub-tabs">
+        <button
+          className={`nav-item ${activeTab === "manage" ? "active" : ""}`}
+          onClick={() => setActiveTab("manage")}
+        >
+          Управление
+        </button>
+        <button
+          className={`nav-item ${activeTab === "log" ? "active" : ""}`}
+          onClick={() => setActiveTab("log")}
+        >
+          Журнал
+        </button>
+      </div>
+      {activeTab === "log" ? (
+        <ActionLogPage />
+      ) : (
+        <>
       <ErrorMessage message={error} />
 
       <section>
@@ -145,6 +165,8 @@ export const AdminPage = () => {
           ))}
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 };
