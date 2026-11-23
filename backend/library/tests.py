@@ -143,6 +143,21 @@ class LibraryTestCase(APITestCase):
         response = self.client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {access}")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_auth_me_returns_roles(self):
+        self.client.force_authenticate(self.reader)
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["email"], "reader@test.local")
+        self.assertIn("reader", response.data["groups"])
+
+    def test_logout_with_invalid_refresh_token(self):
+        response = self.client.post(
+            "/api/token/blacklist/",
+            {"refresh": "invalid-refresh-token"},
+            format="json",
+        )
+        self.assertIn(response.status_code, [status.HTTP_400_BAD_REQUEST, status.HTTP_401_UNAUTHORIZED])
+
     def test_access_token_required_for_protected_endpoint(self):
         response = self.client.get(f"/api/readers/{self.reader.id}/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
