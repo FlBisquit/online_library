@@ -415,6 +415,23 @@ class CatalogManagementTests(LibraryTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertTrue(models.BookCopy.objects.filter(pk=self.copy.id).exists())
 
+    def test_delete_copy_with_live_reservation_returns_409(self):
+        reservation = models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            copy=self.copy,
+            status=models.Reservation.Status.ACTIVE,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() + timedelta(days=1),
+            active_slot=1,
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.delete(f"/api/copies/{self.copy.id}/")
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(models.BookCopy.objects.filter(pk=self.copy.id).exists())
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.copy_id, self.copy.id)
+
     def test_limit_query_param_controls_page_size(self):
         for index in range(3):
             models.Book.objects.create(
