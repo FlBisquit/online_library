@@ -76,6 +76,21 @@ def delete_copy(copy_id):
         _book, copy = _lock_copy_in_book(book_id, copy_id)
         if models.Issue.objects.filter(copy=copy).exists():
             raise Conflict("Экземпляр участвует в выдачах и не может быть удалён.")
+        live_reservations = list(
+            models.Reservation.objects.select_for_update()
+            .filter(
+                copy=copy,
+                status__in=[
+                    models.Reservation.Status.PENDING,
+                    models.Reservation.Status.ACTIVE,
+                ],
+            )
+            .order_by("queue_date", "id")
+        )
+        if live_reservations:
+            raise Conflict(
+                "Экземпляр имеет активные бронирования и не может быть удалён."
+            )
         copy.delete()
 
 
