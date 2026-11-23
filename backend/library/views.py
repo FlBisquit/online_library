@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 
 from library import models, services
 from library.pagination import CatalogPagination
-from library.permissions import IsCatalogEditor, IsLibrarianOrAdmin
+from library.permissions import IsAdmin, IsCatalogEditor, IsLibrarianOrAdmin
 from library.serializers import (
     ActionLogSerializer,
     AuthorSerializer,
@@ -22,9 +22,13 @@ from library.serializers import (
     IssueSerializer,
     ReaderSerializer,
     ReservationSerializer,
+    UserCreateSerializer,
+    UserSerializer,
+    UserUpdateSerializer,
 )
 from library.services import catalog as catalog_services
 from library.services import reports as report_services
+from library.services import users as user_services
 
 
 def _get_reader_or_none(reader_id):
@@ -372,14 +376,59 @@ class IssueListView(generics.ListCreateAPIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class ReaderListView(generics.ListAPIView):
-    """Список читателей (панель администратора)."""
+class UserListCreateView(generics.ListCreateAPIView):
+    """Список пользователей и создание сотрудников (только администратор)."""
 
-    serializer_class = ReaderSerializer
-    permission_classes = [IsLibrarianOrAdmin]
+    permission_classes = [IsAdmin]
+    pagination_class = CatalogPagination
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return UserCreateSerializer
+        return UserSerializer
+
+    def get_queryset(self):
+        queryset = models.Reader.objects.all()
+        params = self.request.query_params
+        search = params.get("search")
+        if search:
+            queryset = queryset.filter(
+                models.Q(email__icontains=search) | models.Q(full_name__icontains=search)
+            )
+        role = params.get("role")
+        if role:
+            queryset = queryset.filter(groups__name=role)
+        user_status = params.get("status")
+        if user_status:
+            queryset = queryset.filter(status=user_status)
+        return queryset.distinct().order_by("id")
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reader = user_services.create_staff_user(actor=request.user, **serializer.validated_data)
+        return Response(UserSerializer(reader).data, status=status.HTTP_201_CREATED)
+
+
+class UserDetailView(generics.RetrieveUpdateAPIView):
+    """Просмотр и изменение роли/статуса пользователя (только администратор)."""
+
+    serializer_class = UserSerializer
+    permission_classes = [IsAdmin]
 
     def get_queryset(self):
         return models.Reader.objects.all()
+
+    def update(self, request, *args, **kwargs):
+        target = self.get_object()
+        serializer = UserUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        updated = user_services.update_user(
+            target_id=target.pk,
+            actor=request.user,
+            **serializer.validated_data,
+        )
+        return Response(UserSerializer(updated).data)
 
 
 class IssueReturnView(APIView):

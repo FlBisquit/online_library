@@ -5,7 +5,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
 
-from library import constants, models
+from library import constants, models, roles
 from library.services import Conflict
 
 
@@ -178,6 +178,69 @@ class ReaderSerializer(serializers.ModelSerializer):
             full_name=validated_data.get("full_name") or "",
             phone=validated_data.get("phone"),
         )
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Пользователь в админке: роль и статус."""
+
+    groups = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
+
+    class Meta:
+        model = models.Reader
+        fields = [
+            "id",
+            "email",
+            "full_name",
+            "phone",
+            "status",
+            "registered_at",
+            "groups",
+            "role",
+        ]
+
+    def get_groups(self, obj):
+        return [group.name for group in obj.groups.all()]
+
+    def get_role(self, obj):
+        from library.services import users as user_services
+
+        return user_services.role_of(obj)
+
+
+class UserCreateSerializer(serializers.ModelSerializer):
+    """Создание сотрудника или администратора с явной ролью."""
+
+    password = serializers.CharField(
+        write_only=True,
+        validators=[validate_password],
+        style={"input_type": "password"},
+    )
+    role = serializers.ChoiceField(choices=[roles.LIBRARIAN_ROLE, roles.ADMIN_ROLE])
+
+    class Meta:
+        model = models.Reader
+        fields = ["email", "password", "full_name", "phone", "role"]
+
+    def validate_email(self, value):
+        if models.Reader.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже существует.")
+        return value
+
+
+class UserUpdateSerializer(serializers.Serializer):
+    """Разрешённые к изменению поля пользователя."""
+
+    role = serializers.ChoiceField(choices=roles.ALL_ROLES, required=False)
+    status = serializers.ChoiceField(
+        choices=[models.Reader.Status.ACTIVE, models.Reader.Status.BLOCKED],
+        required=False,
+    )
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("Укажите role или status.")
+        return attrs
 
 
 class IssueSerializer(serializers.ModelSerializer):
