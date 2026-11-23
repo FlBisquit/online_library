@@ -7,8 +7,9 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from unittest.mock import patch
 
 from django.contrib.auth.models import Group
-from django.db import transaction
+from django.db import connection, transaction
 from django.test import TransactionTestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -751,6 +752,41 @@ class IssueTests(LibraryTestCase):
         self.assertIsNotNone(issue.returned_at)
         self.copy.refresh_from_db()
         self.assertEqual(self.copy.status, models.BookCopy.Status.AVAILABLE)
+
+    def test_return_issue_locks_reservation_before_issue(self):
+        self.copy.status = models.BookCopy.Status.ISSUED
+        self.copy.save(update_fields=["status"])
+        issue = models.Issue.objects.create(
+            reader=self.reader,
+            copy=self.copy,
+            issued_at=timezone.now(),
+            due_at=timezone.now() + timedelta(days=14),
+            status=models.Issue.Status.ISSUED,
+        )
+        reservation = models.Reservation.objects.create(
+            reader=self.other_reader,
+            book=self.book,
+            status=models.Reservation.Status.PENDING,
+            queue_date=timezone.now(),
+            active_slot=1,
+        )
+        with CaptureQueriesContext(connection) as captured:
+            services.return_issue(issue.id, user=self.librarian)
+
+        queries = [query["sql"] for query in captured.captured_queries]
+        reservation_lock = next(
+            index
+            for index, sql in enumerate(queries)
+            if "library_reservation" in sql and "FOR UPDATE" in sql
+        )
+        issue_lock = next(
+            index
+            for index, sql in enumerate(queries)
+            if "library_issue" in sql and "FOR UPDATE" in sql
+        )
+        self.assertLess(reservation_lock, issue_lock)
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.status, models.Reservation.Status.ACTIVE)
 
     def test_return_twice_returns_409(self):
         issue = models.Issue.objects.create(
