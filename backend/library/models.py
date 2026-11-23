@@ -290,10 +290,20 @@ class ActionLog(models.Model):
     details = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Контекст изменения статуса (для системных и пользовательских действий).
+    entity_type = models.CharField(max_length=64, null=True, blank=True)
+    entity_id = models.BigIntegerField(null=True, blank=True)
+    old_status = models.CharField(max_length=20, null=True, blank=True)
+    new_status = models.CharField(max_length=20, null=True, blank=True)
+
     class Meta:
         verbose_name = "Журнал действия"
         verbose_name_plural = "Журналы действий"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["entity_type", "entity_id"], name="actionlog_entity_idx"),
+            models.Index(fields=["created_at"], name="actionlog_created_at_idx"),
+        ]
 
     def __str__(self):
         return f"{self.user} — {self.action}"
