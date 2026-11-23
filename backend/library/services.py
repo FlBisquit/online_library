@@ -5,16 +5,10 @@ Book -> BookCopy (по id) -> Reservation (по queue_date, id) -> Issue.
 """
 from django.db import transaction
 from django.utils import timezone
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework.exceptions import NotFound
 
 from library import constants, models
-
-
-class Conflict(APIException):
-    """Конфликт — операция не может быть выполнена (например, недоступный экземпляр)."""
-
-    status_code = 409
-    default_detail = "Запрос конфликтует с текущим состоянием ресурса."
+from library.transitions import ISSUE_TRANSITIONS, Conflict, change_status
 
 
 def _get_reader(reader_id):
@@ -59,12 +53,6 @@ def _lock_reservation(reservation_id):
         )
     except models.Reservation.DoesNotExist:
         raise NotFound("Бронирование не найдено.")
-
-
-def _clear_reservation_slot(reservation):
-    reservation.status = models.Reservation.Status.CANCELLED
-    reservation.active_slot = None
-    reservation.save(update_fields=["status", "active_slot"])
 
 
 def issue_copy(reader_id, copy_id, user=None):
@@ -119,13 +107,15 @@ def issue_copy(reader_id, copy_id, user=None):
             due_at=timezone.now() + constants.LOAN_PERIOD,
             status=models.Issue.Status.ISSUED,
         )
-        copy.status = models.BookCopy.Status.ISSUED
-        copy.save(update_fields=["status"])
+        change_status(copy, models.BookCopy.Status.ISSUED, user=user)
 
         if reservation is not None:
-            reservation.status = models.Reservation.Status.FULFILLED
-            reservation.active_slot = None
-            reservation.save(update_fields=["status", "active_slot"])
+            change_status(
+                reservation,
+                models.Reservation.Status.FULFILLED,
+                user=user,
+                active_slot=None,
+            )
 
         _log_action(user, "issue.create", {"reader_id": reader.id, "copy_id": copy.id})
 
@@ -152,18 +142,21 @@ def return_issue(issue_id, return_date=None, user=None):
         except models.Issue.DoesNotExist:
             raise NotFound("Выдача не найдена.")
 
-        if issue.status != models.Issue.Status.ISSUED:
-            raise Conflict("Возврат возможен только по активной выдаче.")
+        if models.Issue.Status.RETURNED not in ISSUE_TRANSITIONS.get(issue.status, set()):
+            raise Conflict("Возврат возможен только по активной, просроченной или утерянной выдаче.")
 
         now = return_date or timezone.now()
-        issue.returned_at = now
-        issue.status = models.Issue.Status.RETURNED
-        issue.save(update_fields=["returned_at", "status"])
+        change_status(
+            issue,
+            models.Issue.Status.RETURNED,
+            user=user,
+            returned_at=now,
+        )
 
-        copy.status = models.BookCopy.Status.AVAILABLE
-        copy.save(update_fields=["status"])
+        if copy.status != models.BookCopy.Status.AVAILABLE:
+            change_status(copy, models.BookCopy.Status.AVAILABLE, user=user)
 
-        _promote_next(book, copy)
+        _promote_next(book, copy, user=user)
 
         _log_action(user, "issue.return", {"issue_id": issue.id, "copy_id": copy.id})
 
@@ -256,18 +249,22 @@ def cancel_reservation(reservation_id, user=None):
             and copy is not None
             and copy.status == models.BookCopy.Status.RESERVED
         ):
-            copy.status = models.BookCopy.Status.AVAILABLE
-            copy.save(update_fields=["status"])
+            change_status(copy, models.BookCopy.Status.AVAILABLE, user=user)
 
-        _clear_reservation_slot(reservation)
-        _promote_next(book, copy)
+        change_status(
+            reservation,
+            models.Reservation.Status.CANCELLED,
+            user=user,
+            active_slot=None,
+        )
+        _promote_next(book, copy, user=user)
 
         _log_action(user, "reservation.cancel", {"reservation_id": reservation.id, "book_id": book.id})
 
         return reservation, copy
 
 
-def _promote_next(book, available_copy):
+def _promote_next(book, available_copy, user=None):
     """Переход следующего читателя из очереди после освобождения экземпляра."""
     if available_copy is None:
         return None
@@ -279,12 +276,14 @@ def _promote_next(book, available_copy):
     )
     if next_reservation is None:
         return None
-    next_reservation.status = models.Reservation.Status.ACTIVE
-    next_reservation.copy = available_copy
-    next_reservation.expires_at = timezone.now() + constants.RESERVATION_PERIOD
-    next_reservation.save(update_fields=["status", "copy", "expires_at"])
-    available_copy.status = models.BookCopy.Status.RESERVED
-    available_copy.save(update_fields=["status"])
+    change_status(
+        next_reservation,
+        models.Reservation.Status.ACTIVE,
+        user=user,
+        copy=available_copy,
+        expires_at=timezone.now() + constants.RESERVATION_PERIOD,
+    )
+    change_status(available_copy, models.BookCopy.Status.RESERVED, user=user)
     return next_reservation
 
 
@@ -323,11 +322,13 @@ def expire_reservations(book_id=None):
                 continue
 
             if copy is not None and copy.status == models.BookCopy.Status.RESERVED:
-                copy.status = models.BookCopy.Status.AVAILABLE
-                copy.save(update_fields=["status"])
-            reservation.status = models.Reservation.Status.EXPIRED
-            reservation.active_slot = None
-            reservation.save(update_fields=["status", "active_slot"])
+                change_status(copy, models.BookCopy.Status.AVAILABLE, user=None)
+            change_status(
+                reservation,
+                models.Reservation.Status.EXPIRED,
+                user=None,
+                active_slot=None,
+            )
 
             _log_system_action(
                 "reservation.expire",
@@ -340,3 +341,61 @@ def expire_reservations(book_id=None):
             _promote_next(book, copy)
             processed.append(reservation)
         return processed
+
+
+def mark_overdue():
+    """Перевести просроченные выдачи ISSUED в OVERDUE (UPDATE ... WHERE ...).
+
+    Вызывается лениво при выдаче списков выдач и из management command.
+    """
+    with transaction.atomic():
+        now = timezone.now()
+        candidates = list(
+            models.Issue.objects.filter(
+                status=models.Issue.Status.ISSUED,
+                due_at__lt=now,
+            )
+            .order_by("id")
+            .values_list("id", "copy__book_id", "copy_id")
+        )
+        processed = []
+        for issue_id, book_id, copy_id in candidates:
+            _lock_book(book_id)
+            _lock_copy(copy_id)
+            try:
+                issue = models.Issue.objects.select_for_update().get(pk=issue_id)
+            except models.Issue.DoesNotExist:
+                continue
+            # Проверка после блокировки: выдача могла быть возвращена.
+            if (
+                issue.status != models.Issue.Status.ISSUED
+                or issue.due_at >= now
+            ):
+                continue
+            change_status(issue, models.Issue.Status.OVERDUE, user=None)
+            processed.append(issue)
+        return processed
+
+
+def mark_issue_lost(issue_id, user=None):
+    """Отметить выдачу и её экземпляр утерянными."""
+    with transaction.atomic():
+        info = (
+            models.Issue.objects.filter(pk=issue_id)
+            .values("copy__book_id", "copy_id")
+            .first()
+        )
+        if info is None:
+            raise NotFound("Выдача не найдена.")
+        _lock_book(info["copy__book_id"])
+        copy = _lock_copy(info["copy_id"])
+        try:
+            issue = models.Issue.objects.select_for_update().get(pk=issue_id)
+        except models.Issue.DoesNotExist:
+            raise NotFound("Выдача не найдена.")
+
+        change_status(issue, models.Issue.Status.LOST, user=user)
+        if copy.status != models.BookCopy.Status.LOST:
+            change_status(copy, models.BookCopy.Status.LOST, user=user)
+        _log_action(user, "issue.mark_lost", {"issue_id": issue.id, "copy_id": copy.id})
+        return issue
