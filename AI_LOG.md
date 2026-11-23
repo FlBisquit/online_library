@@ -137,5 +137,24 @@ AI Driven Development и приступить к доведению проект
 
 Проект находится в полностью готовом состоянии; текущая задача по hardening выполнена.
 
+## 2026-11-23 — Test for access token lifetime
+
+### Задача
+
+- Добавлен тест `test_access_token_lifetime_is_15_minutes`, проверяющий, что
+  `exp - iat` access token равен 900 секундам.
+
+### Проверки
+
+- `python manage.py test` — OK (49 тестов).
+- `python manage.py check` — OK.
+- `python manage.py makemigrations --check` — изменений нет.
+- `npx vite build` — OK.
+
+### Итоговый статус
+
+Текущая задача по hardening завершена, проект в полностью готовом состоянии.
+
+
 
 
