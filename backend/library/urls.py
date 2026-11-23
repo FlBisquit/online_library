@@ -1,5 +1,13 @@
 from django.urls import path
-from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import (
+    TokenBlacklistView,
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+from rest_framework.throttling import ScopedRateThrottle
+
+TokenObtainPairView.throttling_class = ScopedRateThrottle
+TokenObtainPairView.throttle_scope = "token"
 
 from library import views
 
