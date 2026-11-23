@@ -137,6 +137,17 @@ def return_issue(issue_id, return_date=None, user=None):
     with transaction.atomic():
         book = _lock_book(issue_info["copy__book_id"])
         copy = _lock_copy(issue_info["copy_id"])
+        # Сначала Book -> BookCopy -> Reservation, только потом Issue.
+        next_reservation = (
+            models.Reservation.objects.select_for_update()
+            .filter(
+                book=book,
+                status=models.Reservation.Status.PENDING,
+                active_slot=1,
+            )
+            .order_by("queue_date", "id")
+            .first()
+        )
         try:
             issue = models.Issue.objects.select_for_update().select_related("reader").get(pk=issue_id)
         except models.Issue.DoesNotExist:
@@ -156,7 +167,7 @@ def return_issue(issue_id, return_date=None, user=None):
         if copy.status != models.BookCopy.Status.AVAILABLE:
             change_status(copy, models.BookCopy.Status.AVAILABLE, user=user)
 
-        _promote_next(book, copy, user=user)
+        _promote_next(book, copy, user=user, reservation=next_reservation)
 
         _log_action(user, "issue.return", {"issue_id": issue.id, "copy_id": copy.id})
 
@@ -264,16 +275,27 @@ def cancel_reservation(reservation_id, user=None):
         return reservation, copy
 
 
-def _promote_next(book, available_copy, user=None):
-    """Переход следующего читателя из очереди после освобождения экземпляра."""
+def _promote_next(book, available_copy, user=None, reservation=None):
+    """Переход следующего читателя из очереди после освобождения экземпляра.
+
+    Вызывающий может передать уже заблокированную бронь, чтобы соблюсти
+    порядок блокировок Book -> BookCopy -> Reservation -> Issue.
+    """
     if available_copy is None:
         return None
-    next_reservation = (
-        models.Reservation.objects.select_for_update()
-        .filter(book=book, status=models.Reservation.Status.PENDING, active_slot=1)
-        .order_by("queue_date", "id")
-        .first()
-    )
+    if (
+        reservation is not None
+        and reservation.status != models.Reservation.Status.PENDING
+    ):
+        reservation = None
+    next_reservation = reservation
+    if next_reservation is None:
+        next_reservation = (
+            models.Reservation.objects.select_for_update()
+            .filter(book=book, status=models.Reservation.Status.PENDING, active_slot=1)
+            .order_by("queue_date", "id")
+            .first()
+        )
     if next_reservation is None:
         return None
     change_status(
