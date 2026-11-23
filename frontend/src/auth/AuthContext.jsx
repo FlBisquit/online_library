@@ -25,14 +25,12 @@ export const AuthProvider = ({ children }) => {
 
   const loadUser = useCallback(async (accessToken) => {
     const payload = decodeTokenPayload(accessToken);
-    const userId = payload.user_id ?? payload.sub;
-    if (!userId) return null;
-    const reader = await apiClient.get(`/readers/${userId}/`);
+    const me = await apiClient.get("/auth/me/");
     return {
-      ...reader,
-      roles: reader.groups ?? [],
-      is_librarian: (reader.groups ?? []).includes("librarian"),
-      is_admin: (reader.groups ?? []).includes("admin"),
+      ...me,
+      roles: me.groups ?? [],
+      is_librarian: (me.groups ?? []).includes("librarian"),
+      is_admin: (me.groups ?? []).includes("admin"),
     };
   }, []);
 
