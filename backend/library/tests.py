@@ -587,6 +587,21 @@ class ReaderTests(LibraryTestCase):
         self.assertEqual(list(reader.groups.values_list("name", flat=True)), ["reader"])
         self.assertEqual(reader.status, models.Reader.Status.ACTIVE)
 
+    def test_register_reader_creates_missing_reader_group(self):
+        Group.objects.filter(name=roles.READER_ROLE).delete()
+        response = self.client.post(
+            "/api/auth/register/",
+            {
+                "full_name": "Читатель без группы",
+                "email": "fresh@test.local",
+                "password": "Str0ngPass!123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        reader = models.Reader.objects.get(email="fresh@test.local")
+        self.assertEqual(list(reader.groups.values_list("name", flat=True)), ["reader"])
+
     def test_register_reader_weak_password_returns_400(self):
         response = self.client.post(
             "/api/auth/register/",
