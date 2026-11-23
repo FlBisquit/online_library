@@ -527,3 +527,214 @@ class ConcurrentIssueTests(TransactionTestCase):
         self.assertEqual(sorted(results), [status.HTTP_201_CREATED, status.HTTP_409_CONFLICT])
         self.copy.refresh_from_db()
         self.assertEqual(self.copy.status, models.BookCopy.Status.ISSUED)
+
+
+class QueueBehaviorTests(LibraryTestCase):
+    """Регрессионные тесты очереди и бронирования."""
+
+    def _make_copy_unavailable(self):
+        self.copy.status = models.BookCopy.Status.ISSUED
+        self.copy.save(update_fields=["status"])
+
+    def _reservation(self, reader, status, copy=None, offset=0):
+        now = timezone.now() + timedelta(seconds=offset)
+        return models.Reservation.objects.create(
+            reader=reader,
+            book=self.book,
+            status=status,
+            copy=copy,
+            queue_date=now,
+            expires_at=now + timedelta(hours=48),
+            active_slot=1 if status in (
+                models.Reservation.Status.PENDING,
+                models.Reservation.Status.ACTIVE,
+            ) else None,
+        )
+
+    def test_queue_list_reader_sees_only_own_position_and_total(self):
+        self._make_copy_unavailable()
+        self._reservation(self.reader, models.Reservation.Status.PENDING)
+        self._reservation(self.other_reader, models.Reservation.Status.PENDING, offset=1)
+
+        self.client.force_authenticate(self.reader)
+        response = self.client.get(f"/api/books/{self.book.id}/queue/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["position"], 1)
+        self.assertEqual(response.data["total"], 2)
+        self.assertNotIn("reader2@test.local", str(response.data))
+
+        self.client.force_authenticate(self.librarian)
+        staff_response = self.client.get(f"/api/books/{self.book.id}/queue/")
+        self.assertEqual(staff_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(staff_response.data["total"], 2)
+        self.assertEqual([row["position"] for row in staff_response.data["results"]], [1, 2])
+
+    def test_join_queue_missing_book_returns_404(self):
+        self._make_copy_unavailable()
+        self.client.force_authenticate(self.reader)
+        response = self.client.post(
+            "/api/books/9999/queue/", {"reader_id": self.reader.id}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_join_queue_with_available_copy_returns_409(self):
+        self.client.force_authenticate(self.reader)
+        response = self.client.post(
+            f"/api/books/{self.book.id}/queue/", {"reader_id": self.reader.id}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("свободн", response.data["detail"].lower())
+        self.assertEqual(models.Reservation.objects.count(), 0)
+
+    def test_join_cancel_cycle_can_repeat_five_times(self):
+        self._make_copy_unavailable()
+        self.client.force_authenticate(self.reader)
+        for _ in range(5):
+            join = self.client.post(
+                f"/api/books/{self.book.id}/queue/", {"reader_id": self.reader.id}, format="json"
+            )
+            self.assertEqual(join.status_code, status.HTTP_201_CREATED)
+            cancel = self.client.post(
+                f"/api/reservations/{join.data['id']}/cancel/", {}, format="json"
+            )
+            self.assertEqual(cancel.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            models.Reservation.objects.filter(status=models.Reservation.Status.CANCELLED).count(),
+            5,
+        )
+
+    def test_return_reserves_copy_for_first_in_queue_then_fulfils(self):
+        holder = models.Reader.objects.create_user(
+            email="holder@test.local", password="HolderPass123", full_name="Держатель"
+        )
+        holder.groups.add(_ensure_group(roles.READER_ROLE))
+        self.copy.status = models.BookCopy.Status.ISSUED
+        self.copy.save(update_fields=["status"])
+        issue = models.Issue.objects.create(
+            reader=holder,
+            copy=self.copy,
+            issued_at=timezone.now(),
+            due_at=timezone.now() + timedelta(days=14),
+            status=models.Issue.Status.ISSUED,
+        )
+        first = self._reservation(self.reader, models.Reservation.Status.PENDING)
+        second = self._reservation(self.other_reader, models.Reservation.Status.PENDING, offset=1)
+
+        self.client.force_authenticate(self.librarian)
+        returned = self.client.post(f"/api/issues/{issue.id}/return/", {}, format="json")
+        self.assertEqual(returned.status_code, status.HTTP_200_OK)
+
+        self.copy.refresh_from_db()
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(self.copy.status, models.BookCopy.Status.RESERVED)
+        self.assertEqual(first.status, models.Reservation.Status.ACTIVE)
+        self.assertEqual(first.copy_id, self.copy.id)
+        self.assertEqual(second.status, models.Reservation.Status.PENDING)
+
+        denied = self.client.post(
+            "/api/issues/",
+            {"reader_id": self.other_reader.id, "copy_id": self.copy.id},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, status.HTTP_409_CONFLICT)
+
+        granted = self.client.post(
+            "/api/issues/",
+            {"reader_id": self.reader.id, "copy_id": self.copy.id},
+            format="json",
+        )
+        self.assertEqual(granted.status_code, status.HTTP_201_CREATED)
+        first.refresh_from_db()
+        self.copy.refresh_from_db()
+        self.assertEqual(first.status, models.Reservation.Status.FULFILLED)
+        self.assertIsNone(first.active_slot)
+        self.assertEqual(self.copy.status, models.BookCopy.Status.ISSUED)
+
+    def test_cancel_active_reservation_frees_only_its_own_copy(self):
+        other_copy = models.BookCopy.objects.create(
+            book=self.book, inventory_number="INV-2", status=models.BookCopy.Status.RESERVED
+        )
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        reservation = self._reservation(
+            self.reader, models.Reservation.Status.ACTIVE, copy=self.copy
+        )
+
+        self.client.force_authenticate(self.reader)
+        response = self.client.post(
+            f"/api/reservations/{reservation.id}/cancel/", {}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.copy.refresh_from_db()
+        other_copy.refresh_from_db()
+        self.assertEqual(self.copy.status, models.BookCopy.Status.AVAILABLE)
+        self.assertEqual(other_copy.status, models.BookCopy.Status.RESERVED)
+
+    def test_cancelling_foreign_reservation_returns_403(self):
+        reservation = self._reservation(self.reader, models.Reservation.Status.PENDING)
+        self.client.force_authenticate(self.other_reader)
+        response = self.client.post(
+            f"/api/reservations/{reservation.id}/cancel/", {}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        detail = self.client.get(f"/api/reservations/{reservation.id}/")
+        self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_integrity_error_handler_returns_409(self):
+        from django.db import IntegrityError
+
+        from config.exceptions import api_exception_handler
+
+        response = api_exception_handler(IntegrityError("duplicate"), {})
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+
+class QueueConcurrencyTests(TransactionTestCase):
+    """Параллельное вступление в очередь на одного читателя."""
+
+    def setUp(self):
+        super().setUp()
+        self.librarian_group = _ensure_group(roles.LIBRARIAN_ROLE)
+        self.reader_group = _ensure_group(roles.READER_ROLE)
+        self.reader = models.Reader.objects.create_user(
+            email="reader@test.local", password="ReaderPass123", full_name="Читатель Читалов"
+        )
+        self.reader.groups.add(self.reader_group)
+        self.book = models.Book.objects.create(
+            title="Тестовая книга", isbn="978-5-000-000-00-0"
+        )
+        self.copy = models.BookCopy.objects.create(
+            book=self.book,
+            inventory_number="INV-1",
+            status=models.BookCopy.Status.ISSUED,
+        )
+
+    def test_ten_parallel_joins_give_one_created_and_nine_conflicts(self):
+        import threading
+
+        from rest_framework.test import APIClient
+
+        barrier = threading.Barrier(10)
+        results = []
+
+        def worker():
+            client = APIClient()
+            client.force_authenticate(self.reader)
+            barrier.wait()
+            response = client.post(
+                f"/api/books/{self.book.id}/queue/",
+                {"reader_id": self.reader.id},
+                format="json",
+            )
+            results.append(response.status_code)
+
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(results.count(status.HTTP_201_CREATED), 1, results)
+        self.assertEqual(results.count(status.HTTP_409_CONFLICT), 9, results)
+        self.assertEqual(models.Reservation.objects.count(), 1)
