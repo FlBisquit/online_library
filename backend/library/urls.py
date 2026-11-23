@@ -35,5 +35,6 @@ urlpatterns = [
     path("reservations/<int:pk>/", views.ReservationDetailView.as_view(), name="reservation-detail"),
     path("reservations/<int:pk>/cancel/", views.ReservationCancelView.as_view(), name="reservation-cancel"),
     path("reports/books/", views.BooksReportView.as_view(), name="report-books"),
+    path("reports/books/export/", views.BooksReportExportView.as_view(), name="report-books-export"),
     path("action-log/", views.ActionLogListView.as_view(), name="action-log-list"),
 ]

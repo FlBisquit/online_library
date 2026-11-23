@@ -1,7 +1,8 @@
 """API views for the library app."""
+import csv
 from datetime import date
 
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -490,6 +491,23 @@ class BooksReportView(APIView):
                 for row in rows
             ]
         )
+
+
+class BooksReportExportView(APIView):
+    """CSV-выгрузка отчёта по книгам (utf-8-sig для Excel)."""
+
+    permission_classes = [IsLibrarianOrAdmin]
+
+    def get(self, request, *args, **kwargs):
+        date_from, date_to = _parse_report_period(request.query_params)
+        rows = report_services.books_report(date_from, date_to)
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response.write("\ufeff")
+        response["Content-Disposition"] = (
+            f'attachment; filename="report_{date_from.isoformat()}_{date_to.isoformat()}.csv"'
+        )
+        report_services.write_books_report_csv(rows, csv.writer(response))
+        return response
 
 
 class ActionLogListView(generics.ListAPIView):

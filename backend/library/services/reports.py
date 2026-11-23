@@ -9,6 +9,32 @@ from django.db.models import Count, Q
 
 from library import models
 
+CSV_HEADERS = ["ID", "Книга", "Выдачи", "Просрочено", "Отмены"]
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def safe_csv_value(value):
+    """Значения, начинающиеся с формулы, экранируются апострофом для Excel."""
+    text = "" if value is None else str(value)
+    if text.startswith(CSV_FORMULA_PREFIXES):
+        return f"'{text}"
+    return text
+
+
+def write_books_report_csv(rows, writer):
+    """Записать тот же отчёт, что отдаёт JSON, в CSV с русскими заголовками."""
+    writer.writerow(CSV_HEADERS)
+    for row in rows:
+        writer.writerow(
+            [
+                safe_csv_value(row["id"]),
+                safe_csv_value(row["title"]),
+                safe_csv_value(row["loans"]),
+                safe_csv_value(row["overdue"]),
+                safe_csv_value(row["cancellations"]),
+            ]
+        )
+
 
 def period_bounds(date_from, date_to):
     """Полуоткрытый интервал [дата_с, дата_по + 1 день) в UTC."""
