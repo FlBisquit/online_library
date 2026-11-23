@@ -159,6 +159,13 @@ def join_queue(reader_id, book_id, user=None):
         if reader.status != models.Reader.Status.ACTIVE:
             raise Conflict("Читатель не может встать в очередь (статус BLOCKED/SUSPENDED).")
 
+        # Сначала BookCopy (по id), затем Reservation (по queue_date, id).
+        free_copy = (
+            models.BookCopy.objects.select_for_update()
+            .filter(book=book, status=models.BookCopy.Status.AVAILABLE)
+            .order_by("id")
+            .first()
+        )
         existing = (
             models.Reservation.objects.select_for_update()
             .filter(reader=reader, book=book)
@@ -171,12 +178,6 @@ def join_queue(reader_id, book_id, user=None):
         ):
             raise Conflict("Читатель уже находится в очереди ожидания на эту книгу.")
 
-        free_copy = (
-            models.BookCopy.objects.select_for_update()
-            .filter(book=book, status=models.BookCopy.Status.AVAILABLE)
-            .order_by("id")
-            .first()
-        )
         if free_copy is not None:
             raise Conflict("Есть свободные экземпляры книги — вставать в очередь не нужно.")
 
@@ -207,6 +208,20 @@ def cancel_reservation(reservation_id, user=None):
         if book_id is None:
             raise NotFound("Бронирование не найдено.")
         book = _lock_book(book_id)
+        # Экземпляр блокируем до бронирования (общий порядок блокировок).
+        info = (
+            models.Reservation.objects.filter(pk=reservation_id)
+            .values("status", "copy_id")
+            .first()
+        )
+        if info is None:
+            raise NotFound("Бронирование не найдено.")
+        copy = None
+        if (
+            info["status"] == models.Reservation.Status.ACTIVE
+            and info["copy_id"]
+        ):
+            copy = _lock_copy(info["copy_id"])
         reservation = _lock_reservation(reservation_id)
         if reservation.status not in (
             models.Reservation.Status.PENDING,
@@ -214,12 +229,13 @@ def cancel_reservation(reservation_id, user=None):
         ):
             raise Conflict("Отменить можно только активное или ожидающее бронирование.")
 
-        copy = None
-        if reservation.status == models.Reservation.Status.ACTIVE and reservation.copy_id:
-            copy = _lock_copy(reservation.copy_id)
-            if copy.status == models.BookCopy.Status.RESERVED:
-                copy.status = models.BookCopy.Status.AVAILABLE
-                copy.save(update_fields=["status"])
+        if (
+            reservation.status == models.Reservation.Status.ACTIVE
+            and copy is not None
+            and copy.status == models.BookCopy.Status.RESERVED
+        ):
+            copy.status = models.BookCopy.Status.AVAILABLE
+            copy.save(update_fields=["status"])
 
         _clear_reservation_slot(reservation)
         _promote_next(book, copy)
