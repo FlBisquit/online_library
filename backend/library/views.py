@@ -32,8 +32,17 @@ def _can_access_issue(user, issue):
     return bool(user and user.is_authenticated and user.id == issue.reader_id)
 
 
+def _is_staff(user):
+    """Библиотекарь или администратор."""
+    return bool(
+        user
+        and user.is_authenticated
+        and (user.has_role("librarian") or user.has_role("admin"))
+    )
+
+
 def _can_access_reservation(user, reservation):
-    if user.has_role("librarian") or user.has_role("admin"):
+    if _is_staff(user):
         return True
     return bool(user and user.is_authenticated and user.id == reservation.reader_id)
 
@@ -242,23 +251,54 @@ class BookQueueListCreateView(APIView):
 
     def get(self, request, *args, **kwargs):
         book_id = self.kwargs.get("book_id")
-        reservations = (
-            list(
-                models.Reservation.objects.filter(book_id=book_id)
-                .select_related("reader")
-                .order_by("queue_date", "id")
+        if not models.Book.objects.filter(pk=book_id).exists():
+            return Response({"detail": "Книга не найдена."}, status=status.HTTP_404_NOT_FOUND)
+        reservations = list(
+            models.Reservation.objects.filter(
+                book_id=book_id,
+                status__in=[models.Reservation.Status.PENDING, models.Reservation.Status.ACTIVE],
             )
+            .select_related("reader")
+            .order_by("queue_date", "id")
         )
-        serializer = ReservationSerializer(reservations, many=True, context={"request": request})
-        results = []
+        total = len(reservations)
+
+        if _is_staff(request.user):
+            results = []
+            for position, reservation in enumerate(reservations, start=1):
+                data = ReservationSerializer(reservation, context={"request": request}).data
+                data["position"] = position
+                data["total"] = total
+                results.append(data)
+            return Response({"book_id": book_id, "total": total, "results": results})
+
+        # Читатель видит только свою позицию и общее число людей в очереди.
         for position, reservation in enumerate(reservations, start=1):
-            data = serializer.to_representation(reservation)
-            data["position"] = position
-            results.append(data)
-        return Response(results)
+            if reservation.reader_id == request.user.id:
+                return Response(
+                    {
+                        "book_id": book_id,
+                        "reader_id": request.user.id,
+                        "position": position,
+                        "total": total,
+                        "status": reservation.status,
+                    }
+                )
+        return Response(
+            {
+                "book_id": book_id,
+                "reader_id": request.user.id,
+                "position": None,
+                "total": total,
+                "status": None,
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
 
     def post(self, request, *args, **kwargs):
         book_id = self.kwargs.get("book_id")
+        if not models.Book.objects.filter(pk=book_id).exists():
+            return Response({"detail": "Книга не найдена."}, status=status.HTTP_404_NOT_FOUND)
         reader_id = request.data.get("reader_id")
         if not reader_id:
             return Response(
@@ -269,7 +309,7 @@ class BookQueueListCreateView(APIView):
         reader = _get_reader_or_none(reader_id)
         if reader is None:
             return Response({"detail": "Читатель не найден."}, status=status.HTTP_404_NOT_FOUND)
-        if not (user.has_role("librarian") or user.has_role("admin")) and not (
+        if not _is_staff(user) and not (
             user.is_authenticated and user.id == reader.id
         ):
             return Response(
@@ -289,6 +329,8 @@ class BookQueuePositionView(APIView):
     def get(self, request, *args, **kwargs):
         book_id = self.kwargs.get("book_id")
         reader_id = self.kwargs.get("reader_id")
+        if not models.Book.objects.filter(pk=book_id).exists():
+            return Response({"detail": "Книга не найдена."}, status=status.HTTP_404_NOT_FOUND)
         reader = _get_reader_or_none(reader_id)
         if reader is None:
             return Response({"detail": "Читатель не найден."}, status=status.HTTP_404_NOT_FOUND)
@@ -297,10 +339,13 @@ class BookQueuePositionView(APIView):
                 {"detail": "Недостаточно прав доступа."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        reservations = models.Reservation.objects.filter(
-            book_id=book_id,
-            status__in=[models.Reservation.Status.PENDING, models.Reservation.Status.ACTIVE],
-        ).order_by("queue_date", "id")
+        reservations = list(
+            models.Reservation.objects.filter(
+                book_id=book_id,
+                status__in=[models.Reservation.Status.PENDING, models.Reservation.Status.ACTIVE],
+            ).order_by("queue_date", "id")
+        )
+        total = len(reservations)
         position = None
         status_value = None
         for index, reservation in enumerate(reservations, start=1):
@@ -310,7 +355,13 @@ class BookQueuePositionView(APIView):
                 break
         if position is None:
             return Response(
-                {"book_id": book_id, "reader_id": reader_id, "position": None, "status": None},
+                {
+                    "book_id": book_id,
+                    "reader_id": reader_id,
+                    "position": None,
+                    "total": total,
+                    "status": None,
+                },
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(
@@ -318,6 +369,7 @@ class BookQueuePositionView(APIView):
                 "book_id": book_id,
                 "reader_id": reader_id,
                 "position": position,
+                "total": total,
                 "status": status_value,
             }
         )

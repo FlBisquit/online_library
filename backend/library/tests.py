@@ -378,6 +378,8 @@ class IssueTests(LibraryTestCase):
 
 class WaitingQueueTests(LibraryTestCase):
     def test_reader_joins_queue(self):
+        self.copy.status = models.BookCopy.Status.ISSUED
+        self.copy.save(update_fields=["status"])
         self.client.force_authenticate(self.reader)
         response = self.client.post(
             f"/api/books/{self.book.id}/queue/",
@@ -387,6 +389,7 @@ class WaitingQueueTests(LibraryTestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         reservation = models.Reservation.objects.get()
         self.assertEqual(reservation.status, models.Reservation.Status.PENDING)
+        self.assertEqual(reservation.active_slot, 1)
 
     def test_duplicate_queue_entry_returns_409(self):
         reservation = models.Reservation.objects.create(
