@@ -223,22 +223,26 @@ def _promote_next(book, available_copy):
 
 def expire_reservations(book=None):
     """Перевод просроченных резервов в статус EXPIRED и освобождение экземпляров."""
-    now = timezone.now()
-    expired = models.Reservation.objects.select_for_update().filter(
-        status=models.Reservation.Status.ACTIVE,
-        expires_at__lt=now,
-    )
-    if book is not None:
-        expired = expired.filter(book=book)
-    for reservation in expired.select_for_update():
-        copy = (
-            models.BookCopy.objects.select_for_update()
-            .filter(book=reservation.book, status=models.BookCopy.Status.RESERVED)
-            .first()
+    with transaction.atomic():
+        now = timezone.now()
+        expired = models.Reservation.objects.select_for_update().filter(
+            status=models.Reservation.Status.ACTIVE,
+            expires_at__lt=now,
         )
-        reservation.status = models.Reservation.Status.EXPIRED
-        reservation.save(update_fields=["status"])
-        if copy is not None:
-            copy.status = models.BookCopy.Status.AVAILABLE
-            copy.save(update_fields=["status"])
-        _promote_next(reservation.book, copy)
+        if book is not None:
+            expired = expired.filter(book=book)
+        processed = []
+        for reservation in expired.select_for_update():
+            copy = (
+                models.BookCopy.objects.select_for_update()
+                .filter(book=reservation.book, status=models.BookCopy.Status.RESERVED)
+                .first()
+            )
+            reservation.status = models.Reservation.Status.EXPIRED
+            reservation.save(update_fields=["status"])
+            if copy is not None:
+                copy.status = models.BookCopy.Status.AVAILABLE
+                copy.save(update_fields=["status"])
+            _promote_next(reservation.book, copy)
+            processed.append(reservation)
+        return processed
