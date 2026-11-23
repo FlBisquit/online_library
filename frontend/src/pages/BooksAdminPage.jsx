@@ -6,6 +6,9 @@ import { ErrorMessage } from "../components/ErrorMessage";
 import { Pagination } from "../components/Pagination";
 import { extractFieldErrors, extractGeneralError } from "../utils/formErrors";
 
+const COPY_STATUSES = ["AVAILABLE", "ISSUED", "RESERVED", "LOST", "RETIRED"];
+const SERVICE_COPY_STATUSES = ["ISSUED", "RESERVED"];
+
 const EMPTY_BOOK = {
   title: "",
   isbn: "",
@@ -440,8 +443,18 @@ export const BooksAdminPage = () => {
                       disabled={busy}
                       onChange={(e) => handleCopyStatus(copy, e.target.value)}
                     >
-                      {["AVAILABLE", "LOST", "RETIRED"].map((status) => (
-                        <option key={status} value={status}>{status}</option>
+                      {COPY_STATUSES.map((itemStatus) => (
+                        <option
+                          key={itemStatus}
+                          value={itemStatus}
+                          disabled={
+                            SERVICE_COPY_STATUSES.includes(itemStatus) ||
+                            (itemStatus === "AVAILABLE" &&
+                              SERVICE_COPY_STATUSES.includes(copy.status))
+                          }
+                        >
+                          {itemStatus}
+                        </option>
                       ))}
                     </select>
                     <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => handleCopyDelete(copy)}>Удалить</button>

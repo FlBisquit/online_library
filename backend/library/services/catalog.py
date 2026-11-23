@@ -44,6 +44,18 @@ def update_copy(copy_id, *, user=None, inventory_number=None, status=None):
         ):
             raise Conflict("Инвентарный номер уже используется.")
         if status is not None and status != copy.status:
+            if (
+                status == models.BookCopy.Status.AVAILABLE
+                and copy.status
+                in (
+                    models.BookCopy.Status.ISSUED,
+                    models.BookCopy.Status.RESERVED,
+                )
+            ):
+                raise Conflict(
+                    "Возврат экземпляра в AVAILABLE выполняется только сервисами "
+                    "выдачи и бронирования."
+                )
             change_status(copy, status, user=user)
         if inventory_number and inventory_number != copy.inventory_number:
             copy.inventory_number = inventory_number
