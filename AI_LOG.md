@@ -267,3 +267,46 @@ AI Driven Development и приступить к доведению проект
 ### Итоговый статус
 
 Проект в полностью готовом состоянии.
+
+## 2026-11-23 — Истечение резервов
+
+### Задача
+
+- `expire_reservations()` был мёртвым кодом: `select_for_update` вне транзакции
+  (TransactionManagementError), просроченный резерв вечно держал экземпляр RESERVED.
+- `issue_copy` не проверял `expires_at` у ACTIVE-резерва; `_promote_next` обрабатывал
+  максимум один просроченный резерв и не продвигал очередь дальше.
+- Нужны системные записи ActionLog и ленивый вызов истечения из пользовательских сценариев.
+
+### Что исправлено
+
+- `ActionLog.user` -> nullable `SET_NULL`, миграция
+  `0006_actionlog_nullable_user`; системные действия пишутся с `user=None`.
+- `services.expire_reservations(book_id=None)`: одна транзакция, порядок блокировок
+  Book -> BookCopy -> Reservation, цикл до полной обработки просроченных резервов.
+  Каждый резерв -> EXPIRED + `active_slot=NULL`, экземпляр освобождается и сразу
+  передаётся следующему PENDING через `_promote_next`; пишется
+  `ActionLog(action="reservation.expire", user=None, details=...)`.
+- `_promote_next` больше не ищет просроченные резервы сам — все изменения
+  инициирует внешний цикл, поэтому логируется каждый резерв в цепочке.
+- Ленивый вызов `expire_reservations`: `join_queue`, `issue_copy`, `return_issue`,
+  `cancel_reservation`, карточка книги и список экземпляров (GET).
+- `issue_copy`: ACTIVE-резерв читателя с истёкшим `expires_at` -> 409, выдача
+  запрещена (резерв при этом истекает и очередь продвигается).
+- Management command `expire_reservations` для cron: опциональный `--book-id`,
+  вывод количества обработанных резервов.
+- Тесты с подменой времени через `patch("django.utils.timezone.now")`: продвижение
+  следующего в очереди, цепочка из 3 резервов за один вызов, выдача по просроченному
+  резерву -> 409, идемпотентность повторного вызова, ленивое истечение из views.
+
+### Финальные проверки
+
+- `python manage.py check` — OK.
+- `python manage.py makemigrations --check` — изменений нет.
+- `python manage.py test` — OK (111 тестов, MySQL).
+- `python manage.py expire_reservations` — OK (0 обработано).
+- `npx vite build` — не требуется (frontend не менялся).
+
+### Итоговый статус
+
+Истечение резервов работает лениво и через cron; просроченные брони больше не блокируют экземпляры.
