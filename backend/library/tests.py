@@ -198,11 +198,53 @@ class BookCopyTests(LibraryTestCase):
 
 
 class ReaderTests(LibraryTestCase):
+    def test_register_reader_success_assigns_reader_group(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {
+                "full_name": "Новый Читатель",
+                "email": "newreader@test.local",
+                "password": "Str0ngPass!123",
+                "phone": "+79990002222",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        reader = models.Reader.objects.get(email="newreader@test.local")
+        self.assertEqual(list(reader.groups.values_list("name", flat=True)), ["reader"])
+        self.assertEqual(reader.status, models.Reader.Status.ACTIVE)
+
+    def test_register_reader_weak_password_returns_400(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {"full_name": "Слабый Читатель", "email": "weak@test.local", "password": "1"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_register_reader_rejects_groups_and_status(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {
+                "full_name": "Читатель с группой",
+                "email": "withgroup@test.local",
+                "password": "Str0ngPass!123",
+                "groups": ["librarian"],
+                "status": "BLOCKED",
+                "is_staff": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        reader = models.Reader.objects.get(email="withgroup@test.local")
+        self.assertEqual(list(reader.groups.values_list("name", flat=True)), ["reader"])
+        self.assertEqual(reader.status, models.Reader.Status.ACTIVE)
+
     def test_reader_registration_duplicate_email_returns_409(self):
         self.client.force_authenticate(self.librarian)
         response = self.client.post(
-            "/api/readers/",
-            {"full_name": "Дубль", "email": "reader@test.local", "phone": "+79990001122"},
+            "/api/auth/register/",
+            {"full_name": "Дубль", "email": "reader@test.local", "password": "Str0ngPass!123"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)

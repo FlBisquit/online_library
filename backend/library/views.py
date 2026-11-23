@@ -104,11 +104,20 @@ class BookCopyListCreateView(generics.ListCreateAPIView):
         serializer.save(book=book)
 
 
-class ReaderCreateView(generics.CreateAPIView):
-    """Регистрация читателя."""
+class RegisterView(generics.CreateAPIView):
+    """Публичная регистрация читателя (роль reader)."""
 
     serializer_class = ReaderSerializer
     permission_classes = [AllowAny]
+
+    def perform_create(self, serializer):
+        reader = serializer.save()
+        from django.contrib.auth.models import Group
+
+        from library import roles
+
+        reader.groups.add(Group.objects.get(name=roles.READER_ROLE))
+        return reader
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -153,6 +162,16 @@ class ReaderIssuesView(APIView):
             )
         issues = models.Issue.objects.filter(reader=reader).order_by("-issued_at")
         serializer = IssueSerializer(issues, many=True, context={"request": request})
+        return Response(serializer.data)
+
+
+class MeView(APIView):
+    """Данные текущего аутентифицированного пользователя и его ролей."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        serializer = ReaderSerializer(request.user)
         return Response(serializer.data)
 
 

@@ -1,6 +1,7 @@
 """Serializers for the library app."""
 from datetime import timedelta
 
+from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -116,7 +117,12 @@ class ReaderSerializer(serializers.ModelSerializer):
     """Сериализатор читателя / регистрации читателя."""
 
     email = serializers.EmailField(max_length=254)
-    password = serializers.CharField(write_only=True, required=False, allow_blank=True, style={"input_type": "password"})
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        validators=[validate_password],
+        style={"input_type": "password"},
+    )
     groups = serializers.SerializerMethodField()
 
     class Meta:
@@ -134,22 +140,13 @@ class ReaderSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        password = validated_data.pop("password", None)
-        if password:
-            reader = models.Reader.objects.create_user(
-                email=validated_data["email"],
-                password=password,
-                full_name=validated_data.get("full_name", ""),
-                phone=validated_data.get("phone"),
-            )
-        else:
-            reader = models.Reader.objects.create(
-                email=validated_data["email"],
-                full_name=validated_data.get("full_name", ""),
-                phone=validated_data.get("phone"),
-                password="",
-            )
-        return reader
+        password = validated_data.pop("password")
+        return models.Reader.objects.create_user(
+            email=validated_data["email"],
+            password=password,
+            full_name=validated_data.get("full_name") or "",
+            phone=validated_data.get("phone"),
+        )
 
 
 class IssueSerializer(serializers.ModelSerializer):
