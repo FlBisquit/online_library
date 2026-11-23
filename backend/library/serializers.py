@@ -25,22 +25,6 @@ class GenreSerializer(serializers.ModelSerializer):
         fields = ["id", "name"]
 
 
-class BookAuthorSerializer(serializers.ModelSerializer):
-    """Сериализатор связи «книга — автор»."""
-
-    class Meta:
-        model = models.BookAuthor
-        fields = ["id", "book", "author"]
-
-
-class BookGenreSerializer(serializers.ModelSerializer):
-    """Сериализатор связи «книга — жанр»."""
-
-    class Meta:
-        model = models.BookGenre
-        fields = ["id", "book", "genre"]
-
-
 class BookSerializer(serializers.ModelSerializer):
     """Сериализатор книги каталога."""
 
