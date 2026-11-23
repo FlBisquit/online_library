@@ -71,6 +71,11 @@ class Reader(AbstractBaseUser, PermissionsMixin):
         """Проверка принадлежности пользователя к роли (группе)."""
         return self.groups.filter(name=role_name).exists()
 
+    @property
+    def is_active(self):
+        """Reader считается активным только при статусе ACTIVE."""
+        return self.status == self.Status.ACTIVE
+
     def is_reader(self):
         return self.has_role("reader")
 

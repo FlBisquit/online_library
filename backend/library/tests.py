@@ -121,6 +121,28 @@ class LibraryTestCase(APITestCase):
         self.assertIn("iat", payload)
         self.assertEqual(payload["exp"] - payload["iat"], 900)
 
+    def test_blocked_reader_cannot_get_token(self):
+        self.reader.status = models.Reader.Status.BLOCKED
+        self.reader.save(update_fields=["status"])
+        response = self.client.post(
+            "/api/token/",
+            {"email": "reader@test.local", "password": "ReaderPass123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_blocked_reader_access_token_rejected(self):
+        token_response = self.client.post(
+            "/api/token/",
+            {"email": "reader@test.local", "password": "ReaderPass123"},
+            format="json",
+        )
+        access = token_response.data["access"]
+        self.reader.status = models.Reader.Status.BLOCKED
+        self.reader.save(update_fields=["status"])
+        response = self.client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {access}")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_access_token_required_for_protected_endpoint(self):
         response = self.client.get(f"/api/readers/{self.reader.id}/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
