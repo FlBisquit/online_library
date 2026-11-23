@@ -243,9 +243,19 @@ class Reservation(models.Model):
 
     reader = models.ForeignKey(Reader, on_delete=models.CASCADE, related_name="reservations")
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="reservations")
+    copy = models.ForeignKey(
+        BookCopy,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reservations",
+    )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     queue_date = models.DateTimeField()
     expires_at = models.DateTimeField(null=True, blank=True)
+    # 1 для живых броней (PENDING/ACTIVE), NULL для завершённых.
+    # В MySQL несколько NULL в unique-индексе не конфликтуют.
+    active_slot = models.PositiveSmallIntegerField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Бронирование"
@@ -253,8 +263,8 @@ class Reservation(models.Model):
         ordering = ["queue_date", "id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["reader", "book", "status"],
-                name="unique_reservation_per_reader_book_status",
+                fields=["reader", "book", "active_slot"],
+                name="unique_active_reservation_per_reader_book",
             ),
             CheckConstraint(
                 condition=Q(status__in=["PENDING", "ACTIVE", "FULFILLED", "CANCELLED", "EXPIRED"]),

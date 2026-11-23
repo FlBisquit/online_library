@@ -185,8 +185,19 @@ class ReservationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.Reservation
-        fields = ["id", "reader", "reader_id", "book", "book_id", "status", "queue_date", "expires_at"]
-        read_only_fields = ["id", "status", "queue_date", "expires_at"]
+        fields = [
+            "id",
+            "reader",
+            "reader_id",
+            "book",
+            "book_id",
+            "copy",
+            "status",
+            "queue_date",
+            "expires_at",
+            "active_slot",
+        ]
+        read_only_fields = ["id", "status", "queue_date", "expires_at", "copy", "active_slot"]
 
     def create(self, validated_data):
         reader = validated_data["reader"]
