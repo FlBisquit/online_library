@@ -31,6 +31,7 @@ urlpatterns = [
     path("readers/<int:pk>/issues/", views.ReaderIssuesView.as_view(), name="reader-issues"),
     path("issues/", views.IssueListView.as_view(), name="issue-list"),
     path("issues/<int:pk>/return/", views.IssueReturnView.as_view(), name="issue-return"),
+    path("issues/<int:pk>/mark-lost/", views.IssueMarkLostView.as_view(), name="issue-mark-lost"),
     path("reservations/<int:pk>/", views.ReservationDetailView.as_view(), name="reservation-detail"),
     path("reservations/<int:pk>/cancel/", views.ReservationCancelView.as_view(), name="reservation-cancel"),
     path("reports/issues/", views.IssuesReportView.as_view(), name="report-issues"),

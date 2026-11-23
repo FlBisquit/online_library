@@ -26,12 +26,6 @@ def _can_access_reader(user, reader):
     return bool(user and user.is_authenticated and user.id == reader.id)
 
 
-def _can_access_issue(user, issue):
-    if user.has_role("librarian") or user.has_role("admin"):
-        return True
-    return bool(user and user.is_authenticated and user.id == issue.reader_id)
-
-
 def _is_staff(user):
     """Библиотекарь или администратор."""
     return bool(
@@ -177,6 +171,7 @@ class ReaderIssuesView(APIView):
                 {"detail": "Недостаточно прав доступа."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        services.mark_overdue()
         issues = models.Issue.objects.filter(reader=reader).order_by("-issued_at")
         serializer = IssueSerializer(issues, many=True, context={"request": request})
         return Response(serializer.data)
@@ -197,6 +192,10 @@ class IssueListView(generics.ListCreateAPIView):
 
     serializer_class = IssueSerializer
     permission_classes = [IsLibrarianOrAdmin]
+
+    def get(self, request, *args, **kwargs):
+        services.mark_overdue()
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         queryset = models.Issue.objects.select_related("reader", "copy", "copy__book").all()
@@ -232,23 +231,25 @@ class ReaderListView(generics.ListAPIView):
 
 
 class IssueReturnView(APIView):
-    """Возврат экземпляра по активной выдаче."""
+    """Возврат экземпляра — только библиотекарь или администратор."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsLibrarianOrAdmin]
 
     def post(self, request, *args, **kwargs):
         issue_id = self.kwargs.get("pk")
-        user = request.user
-        issue = models.Issue.objects.select_related("reader").filter(pk=issue_id).first()
-        if issue is None:
-            return Response({"detail": "Выдача не найдена."}, status=status.HTTP_404_NOT_FOUND)
-        if not _can_access_issue(user, issue):
-            return Response(
-                {"detail": "Недостаточно прав доступа."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        updated = services.return_issue(issue_id, user=user)
+        updated = services.return_issue(issue_id, user=request.user)
         serializer = IssueSerializer(updated, context={"request": request})
+        return Response(serializer.data)
+
+
+class IssueMarkLostView(APIView):
+    """Отметить выдачу и экземпляр утерянными — только сотрудники."""
+
+    permission_classes = [IsLibrarianOrAdmin]
+
+    def post(self, request, *args, **kwargs):
+        issue = services.mark_issue_lost(self.kwargs.get("pk"), user=request.user)
+        serializer = IssueSerializer(issue, context={"request": request})
         return Response(serializer.data)
 
 

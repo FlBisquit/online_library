@@ -110,6 +110,13 @@ class BookCopySerializer(serializers.ModelSerializer):
             inventory_number=inventory_number
         ).exclude(pk=instance_pk).exists():
             raise Conflict("Инвентарный номер уже используется.")
+        if attrs.get("status") in (
+            models.BookCopy.Status.ISSUED,
+            models.BookCopy.Status.RESERVED,
+        ):
+            raise Conflict(
+                "Статусы ISSUED и RESERVED выставляются только сервисами библиотеки."
+            )
         return attrs
 
 
