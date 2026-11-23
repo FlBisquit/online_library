@@ -85,3 +85,28 @@ AI Driven Development и приступить к доведению проект
 
 Проект готов к запуску с чистой базой данных MySQL, тестированию и защите преподавателю.
 
+## 2026-11-23 — Истечение резервов и финальная уточнительная правка
+
+### Задача
+
+- Реализовать обработку истечения резервов ожидания и команду ручного запуска.
+
+### Что сделал агент
+
+- `library/services.py`: `expire_reservations()` теперь выполняется внутри
+  `transaction.atomic()` и возвращает список обработанных резервов.
+- Добавлена management-команда `python manage.py expire_reservations`.
+
+### Что пришлось исправить
+
+- Команда падала с `TransactionManagementError: select_for_update cannot be used outside of a transaction`
+  — исправлено оборачиванием в `transaction.atomic()`.
+
+### Финальные проверки
+
+- `python manage.py check` — OK.
+- `python manage.py test` — OK (42 теста).
+- `python manage.py makemigrations --check` — изменений нет.
+- `npx vite build` — OK.
+
+
