@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { Loading } from "../components/Loading";
+import { EmptyState } from "../components/EmptyState";
+import { ErrorMessage } from "../components/ErrorMessage";
 
 export const MyLoansPage = () => {
   const { user } = useAuth();
@@ -46,9 +49,9 @@ export const MyLoansPage = () => {
   return (
     <div className="page">
       <h2>Мои выдачи</h2>
-      {loading && <div className="loading">Загрузка выдач...</div>}
-      {error && <div className="alert alert-error">{error}</div>}
-      {!loading && !error && issues.length === 0 && <div className="empty">У вас нет выдач.</div>}
+      {loading && <Loading message="Загрузка выдач..." />}
+      <ErrorMessage message={error} />
+      {!loading && !error && issues.length === 0 && <EmptyState message="У вас нет выдач." />}
 
       {active.length > 0 && (
         <>

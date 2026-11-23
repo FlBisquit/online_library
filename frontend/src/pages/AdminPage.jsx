@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { Loading } from "../components/Loading";
+import { EmptyState } from "../components/EmptyState";
+import { ErrorMessage } from "../components/ErrorMessage";
 
 export const AdminPage = () => {
   const { user } = useAuth();
@@ -96,7 +99,7 @@ export const AdminPage = () => {
   return (
     <div className="page">
       <h2>Панель администратора</h2>
-      {error && <div className="alert alert-error">{error}</div>}
+      <ErrorMessage message={error} />
 
       <section>
         <h3>Добавление книги</h3>
@@ -129,8 +132,8 @@ export const AdminPage = () => {
 
       <section>
         <h3>Пользователи</h3>
-        {loadingReaders && <div className="loading">Загрузка пользователей...</div>}
-        {!loadingReaders && readers.length === 0 && <div className="empty">Пользователи не найдены.</div>}
+        {loadingReaders && <Loading message="Загрузка пользователей..." />}
+        {!loadingReaders && readers.length === 0 && <EmptyState message="Пользователи не найдены." />}
         <div className="book-list">
           {readers.map((reader) => (
             <div key={reader.id} className="book-card">

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { Loading } from "../components/Loading";
+import { EmptyState } from "../components/EmptyState";
+import { ErrorMessage } from "../components/ErrorMessage";
 
 export const LibrarianPage = () => {
   const { user } = useAuth();
@@ -54,9 +57,9 @@ export const LibrarianPage = () => {
           <option value="LOST">Потеряно</option>
         </select>
       </div>
-      {loading && <div className="loading">Загрузка выдач...</div>}
-      {error && <div className="alert alert-error">{error}</div>}
-      {!loading && !error && issues.length === 0 && <div className="empty">Выдачи не найдены.</div>}
+      {loading && <Loading message="Загрузка выдач..." />}
+      <ErrorMessage message={error} />
+      {!loading && !error && issues.length === 0 && <EmptyState message="Выдачи не найдены." />}
       <div className="book-list">
         {issues.map((issue) => (
           <div key={issue.id} className="book-card">

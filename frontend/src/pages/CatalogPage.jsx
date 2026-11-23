@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
+import { Loading } from "../components/Loading";
+import { EmptyState } from "../components/EmptyState";
+import { ErrorMessage } from "../components/ErrorMessage";
 
 export const CatalogPage = () => {
   const [books, setBooks] = useState([]);
@@ -70,9 +73,9 @@ export const CatalogPage = () => {
         value={search}
         onChange={(e) => handleSearch(e.target.value)}
       />
-      {loading && <div className="loading">Загрузка каталога...</div>}
-      {error && <div className="alert alert-error">{error}</div>}
-      {!loading && !error && books.length === 0 && <div className="empty">Книги не найдены.</div>}
+      {loading && <Loading message="Загрузка каталога..." />}
+      <ErrorMessage message={error} />
+      {!loading && !error && books.length === 0 && <EmptyState message="Книги не найдены." />}
       <div className="book-list">
         {books.map((book) => (
           <button key={book.id} className="book-card" onClick={() => setSelectedBookId(book.id)}>
@@ -106,7 +109,7 @@ export const CatalogPage = () => {
             </div>
           )}
           <h4>Экземпляры книги</h4>
-          {copies.length === 0 && <div className="empty">Экземпляры не найдены.</div>}
+          {copies.length === 0 && <EmptyState message="Экземпляры не найдены." />}
           <div className="book-list">
             {copies.map((copy) => (
               <div key={copy.id} className="book-card">
