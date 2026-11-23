@@ -10,14 +10,6 @@ export const App = () => {
   const { user, initialized, logout } = useAuth();
   const [activeId, setActiveId] = useState("catalog");
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch {
-      // Игнорируем ошибки при выходе.
-    }
-  };
-
   if (!initialized) {
     return <div className="page">Загрузка...</div>;
   }
@@ -38,6 +30,15 @@ export const App = () => {
   ];
 
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
+  const ActiveComponent = activeTab?.component;
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // Игнорируем ошибки выхода.
+    }
+  };
 
   return (
     <div className="app">
@@ -56,7 +57,7 @@ export const App = () => {
         </button>
       </nav>
       <div className="content">
-        {activeTab.component}
+        {ActiveComponent ? <ActiveComponent /> : <div className="page">Нет доступных разделов.</div>}
       </div>
     </div>
   );

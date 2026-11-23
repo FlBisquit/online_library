@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { apiClient, clearTokens, getAccessToken, getRefreshToken, setTokens } from "../api/client";
 
 const AuthContext = createContext(null);
@@ -34,13 +34,32 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const restore = async () => {
+      if (getAccessToken()) {
+        try {
+          const userData = await loadUser(getAccessToken());
+          if (!cancelled) setUser(userData);
+        } catch {
+          // Сессия не восстановлена — показываем экран входа.
+        }
+      }
+      if (!cancelled) setInitialized(true);
+    };
+    restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadUser]);
+
   const login = useCallback(
     async (email, password) => {
       const data = await apiClient.post("/token/", { email, password });
       setTokens({ access: data.access, refresh: data.refresh });
-      const user = await loadUser(data.access);
-      setUser(user);
-      return user;
+      const userData = await loadUser(data.access);
+      setUser(userData);
+      return userData;
     },
     [loadUser],
   );
