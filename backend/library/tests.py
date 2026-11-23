@@ -736,6 +736,60 @@ class IssueTests(LibraryTestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_issue_serializer_returns_nested_book_reader_and_copy(self):
+        self.client.force_authenticate(self.librarian)
+        response = self.client.post(
+            "/api/issues/",
+            {"reader_id": self.reader.id, "copy_id": self.copy.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["book"]["id"], self.book.id)
+        self.assertEqual(response.data["book"]["title"], "Тестовая книга")
+        self.assertEqual(response.data["reader"]["id"], self.reader.id)
+        self.assertEqual(response.data["reader"]["full_name"], "Читатель Читалов")
+        self.assertEqual(response.data["copy"]["inventory_number"], "INV-1")
+
+    def test_issue_list_due_overdue_and_search_filters(self):
+        self.copy.status = models.BookCopy.Status.ISSUED
+        self.copy.save(update_fields=["status"])
+        models.Issue.objects.create(
+            reader=self.reader,
+            copy=self.copy,
+            issued_at=timezone.now() - timedelta(days=30),
+            due_at=timezone.now() - timedelta(days=16),
+            status=models.Issue.Status.ISSUED,
+        )
+        other_copy = models.BookCopy.objects.create(
+            book=self.book, inventory_number="INV-2", status=models.BookCopy.Status.ISSUED
+        )
+        models.Issue.objects.create(
+            reader=self.other_reader,
+            copy=other_copy,
+            issued_at=timezone.now() - timedelta(days=30),
+            due_at=timezone.now() - timedelta(days=16),
+            status=models.Issue.Status.ISSUED,
+        )
+        future_copy = models.BookCopy.objects.create(
+            book=self.book, inventory_number="INV-3", status=models.BookCopy.Status.ISSUED
+        )
+        models.Issue.objects.create(
+            reader=self.reader,
+            copy=future_copy,
+            issued_at=timezone.now(),
+            due_at=timezone.now() + timedelta(days=14),
+            status=models.BookCopy.Status.ISSUED,
+        )
+
+        self.client.force_authenticate(self.librarian)
+        overdue = self.client.get("/api/issues/", {"due": "overdue"})
+        self.assertEqual(overdue.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(overdue.data["results"]), 2)
+
+        found = self.client.get("/api/issues/", {"search": "Читатель"})
+        self.assertEqual(found.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(found.data["results"]), 2)
+
     def test_return_issue_successful(self):
         issue = models.Issue.objects.create(
             reader=self.reader,
@@ -1132,6 +1186,32 @@ class QueueBehaviorTests(LibraryTestCase):
         self.assertEqual(staff_response.status_code, status.HTTP_200_OK)
         self.assertEqual(staff_response.data["total"], 2)
         self.assertEqual([row["position"] for row in staff_response.data["results"]], [1, 2])
+
+    def test_staff_reservations_waiting_list_includes_position(self):
+        self._make_copy_unavailable()
+        self._reservation(self.reader, models.Reservation.Status.ACTIVE, copy=self.copy)
+        self._reservation(self.other_reader, models.Reservation.Status.PENDING, offset=1)
+
+        self.client.force_authenticate(self.librarian)
+        response = self.client.get("/api/reservations/", {"status": "ACTIVE"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["status"], models.Reservation.Status.ACTIVE)
+        self.assertEqual(response.data["results"][0]["position"], 1)
+        self.assertEqual(response.data["results"][0]["book"]["title"], self.book.title)
+        self.assertEqual(response.data["results"][0]["copy"]["inventory_number"], "INV-1")
+
+    def test_me_reservations_returns_own_reservation_with_position(self):
+        self._make_copy_unavailable()
+        self._reservation(self.reader, models.Reservation.Status.PENDING)
+
+        self.client.force_authenticate(self.reader)
+        response = self.client.get("/api/auth/me/reservations/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["book"]["title"], self.book.title)
+        self.assertEqual(response.data[0]["position"], 1)
+        self.assertIsNotNone(response.data[0]["expires_at"])
 
     def test_join_queue_missing_book_returns_404(self):
         self._make_copy_unavailable()
