@@ -109,4 +109,33 @@ AI Driven Development и приступить к доведению проект
 - `python manage.py makemigrations --check` — изменений нет.
 - `npx vite build` — OK.
 
+## 2026-11-23 — Hardening настроек Django, JWT lifetime, requirements, env-примеры
+
+### Задача
+
+- Исправлен `BASE_DIR` (теперь папка `backend`), env-файл читается корректно.
+- `SECRET_KEY` и `DATABASE_URL` — обязательные переменные без дефолтов.
+- `DEBUG` по умолчанию False; `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` — из env.
+- Access token lifetime — 15 минут; DRF throttling (anon 60/min, user 200/min, token scope 10/min).
+- `requirements.txt`: Django>=5.1,<7; `frontend/.env.example` создан; `backend/.env.example` приведён к новым значениям.
+
+### Что пришлось исправить
+
+- После смены `BASE_DIR` проверено: неверный `DATABASE_URL` в `backend/.env` приводит к падению `migrate`
+  с ошибкой доступа (значит env читается).
+- Удаление `SECRET_KEY` из `backend/.env` → `ImproperlyConfigured: Set the SECRET_KEY environment variable`.
+
+### Финальные проверки
+
+- `python manage.py check` — OK.
+- `python manage.py test` — OK (42 теста).
+- `python manage.py makemigrations --check` — изменений нет.
+- Access token: `exp - iat = 900` секунд.
+- `npx vite build` — OK.
+
+### Итоговый статус
+
+Проект находится в полностью готовом состоянии; текущая задача по hardening выполнена.
+
+
 
