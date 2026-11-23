@@ -229,3 +229,97 @@ body {
   min-width: 155px;
   margin-bottom: 0;
 }
+
+.admin-user {
+  color: #667;
+  font-size: 13px;
+  margin: -10px 0 14px;
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #e2e6ea;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.admin-form .input {
+  margin-bottom: 0;
+}
+
+.multi-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #445;
+}
+
+.multi-label select[multiple] {
+  min-height: 90px;
+}
+
+.field-error {
+  color: #b3261e;
+  font-size: 12px;
+  margin: -4px 0 4px;
+}
+
+.admin-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.status-select {
+  width: auto;
+  min-width: 130px;
+  margin-bottom: 0;
+  padding: 5px 8px;
+}
+
+.reference-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.reference-section {
+  background: #fff;
+  border: 1px solid #e2e6ea;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.reference-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+
+.reference-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reference-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-bottom: 1px solid #eef1f4;
+  font-size: 13px;
+}
+
+.reference-item:last-child {
+  border-bottom: none;
+}

@@ -56,6 +56,13 @@ const extractErrorMessage = (data, status) => {
   return `API request failed with status ${status}`;
 };
 
+const createApiError = (data, status) => {
+  const error = new Error(extractErrorMessage(data, status));
+  error.data = data;
+  error.status = status;
+  return error;
+};
+
 const refreshAccessToken = async () => {
   const refresh = getRefreshToken();
   if (!refresh) return null;
@@ -123,7 +130,7 @@ async function request(path, options = {}) {
     }
   }
   if (!response.ok) {
-    throw new Error(extractErrorMessage(data, response.status));
+    throw createApiError(data, response.status);
   }
   if (response.status === 204) return null;
   return data;
@@ -147,7 +154,7 @@ async function download(path, params) {
         data = text;
       }
     }
-    throw new Error(extractErrorMessage(data, response.status));
+    throw createApiError(data, response.status);
   }
   return await response.blob();
 }
