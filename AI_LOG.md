@@ -233,3 +233,37 @@ AI Driven Development и приступить к доведению проект
 ### Финальные проверки
 
 - `python manage.py test` — OK (80 тестов).
+
+## 2026-11-23 — Очередь и бронирование
+
+### Задача
+
+- Исправить 500 при `GET /api/books/id/queue/` (ListSerializer.to_representation) и утечку
+  чужих данных: читатель видит только свою позицию и total, сотрудник — весь список.
+- `POST /api/books/9999/queue/` → 404 вместо IntegrityError/500.
+- Сериализовать параллельный join_queue: 1×201 и 9×409.
+- Заменить unique(reader, book, status) на `active_slot` (1 для PENDING/ACTIVE, NULL иначе)
+  + data migration; добавить `Reservation.copy` и освобождать именно её.
+- Запретить очередь при наличии свободного экземпляра (409).
+- Единый порядок блокировок: Book → BookCopy → Reservation → Issue.
+- Глобальный обработчик IntegrityError → 409.
+
+### Что исправлено
+
+- `models.py` + миграция `0005_reservation_active_slot_and_copy`: новое поле `copy`,
+  `active_slot`, unique-констрейнт, data migration для существующих строк.
+- `config/exceptions.py`: `api_exception_handler`, подключён в `REST_FRAMEWORK`.
+- `services.py`: все операции в `transaction.atomic()` с одинаковым порядком блокировок;
+  проверки после блокировки; active_slot и резервирование конкретного экземпляра.
+- `views.py`: безопасный вывод очереди и position/total, проверка существования книги (404).
+
+### Финальные проверки
+
+- `python manage.py check` — OK.
+- `python manage.py makemigrations --check` — изменений нет.
+- `python manage.py test` — OK (97 тестов, MySQL).
+- `npx vite build` — OK.
+
+### Итоговый статус
+
+Проект в полностью готовом состоянии.
