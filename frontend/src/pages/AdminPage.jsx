@@ -5,6 +5,7 @@ import { Loading } from "../components/Loading";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { ActionLogPage } from "./ActionLogPage";
+import { ReportPage } from "./ReportPage";
 
 export const AdminPage = () => {
   const { user } = useAuth();
@@ -114,9 +115,17 @@ export const AdminPage = () => {
         >
           Журнал
         </button>
+        <button
+          className={`nav-item ${activeTab === "report" ? "active" : ""}`}
+          onClick={() => setActiveTab("report")}
+        >
+          Отчёт
+        </button>
       </div>
       {activeTab === "log" ? (
         <ActionLogPage />
+      ) : activeTab === "report" ? (
+        <ReportPage />
       ) : (
         <>
       <ErrorMessage message={error} />
