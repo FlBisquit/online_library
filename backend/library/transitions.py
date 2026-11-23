@@ -5,6 +5,7 @@
 со старым и новым статусом в той же транзакции.
 """
 from django.db import transaction
+from django.utils import timezone
 from rest_framework.exceptions import APIException
 
 from library import models
@@ -92,6 +93,11 @@ def change_status(obj, new_status, user=None, **extra_fields):
     entity_type = type(obj).__name__
     with transaction.atomic():
         obj.status = new_status
+        if (
+            isinstance(obj, models.Reservation)
+            and new_status == models.Reservation.Status.CANCELLED
+        ):
+            obj.cancelled_at = timezone.now()
         for field, value in extra_fields.items():
             setattr(obj, field, value)
         obj.save()

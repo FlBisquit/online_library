@@ -217,6 +217,9 @@ class Issue(models.Model):
         verbose_name = "Выдача"
         verbose_name_plural = "Выдачи"
         ordering = ["-issued_at"]
+        indexes = [
+            models.Index(fields=["issued_at"], name="issue_issued_at_idx"),
+        ]
         constraints = [
             CheckConstraint(
                 condition=Q(due_at__gte=F("issued_at")),
@@ -256,11 +259,16 @@ class Reservation(models.Model):
     # 1 для живых броней (PENDING/ACTIVE), NULL для завершённых.
     # В MySQL несколько NULL в unique-индексе не конфликтуют.
     active_slot = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Момент отмены — основа отчёта по отменам (а не дата постановки в очередь).
+    cancelled_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Бронирование"
         verbose_name_plural = "Бронирования"
         ordering = ["queue_date", "id"]
+        indexes = [
+            models.Index(fields=["book", "cancelled_at"], name="reservation_book_cancelled_idx"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["reader", "book", "active_slot"],
