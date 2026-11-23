@@ -3,14 +3,15 @@ import environ
 from datetime import timedelta
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
-    DEBUG=(bool, True),
-    SECRET_KEY=(str, "django-insecure-initial-secret-key-change-me"),
+    DEBUG=(bool, False),
+    SECRET_KEY=str,
     ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1", "[::1]"]),
-    DATABASE_URL=(str, "mysql://lib:libpass@127.0.0.1:3306/library"),
+    DATABASE_URL=str,
     CORS_ALLOWED_ORIGINS=(list, ["http://localhost:5173"]),
+    CSRF_TRUSTED_ORIGINS=(list, []),
 )
 
 env.read_env(BASE_DIR / ".env")
@@ -66,10 +67,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
-    "default": env.db_url(
-        "DATABASE_URL",
-        default="mysql://lib:libpass@127.0.0.1:3306/library",
-    ),
+    "default": env.db_url("DATABASE_URL"),
 }
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -106,10 +104,19 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "60/min",
+        "user": "200/min",
+        "token": "10/min",
+    },
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
@@ -119,3 +126,4 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS")
