@@ -279,7 +279,13 @@ class Reservation(models.Model):
 class ActionLog(models.Model):
     """Журнал действий пользователей библиотеки."""
 
-    user = models.ForeignKey(Reader, on_delete=models.CASCADE, related_name="action_logs")
+    user = models.ForeignKey(
+        Reader,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="action_logs",
+    )
     action = models.CharField(max_length=64)
     details = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
