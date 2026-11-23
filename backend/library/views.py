@@ -283,7 +283,8 @@ class RegisterView(generics.CreateAPIView):
 
         from library import roles
 
-        reader.groups.add(Group.objects.get(name=roles.READER_ROLE))
+        group, _created = Group.objects.get_or_create(name=roles.READER_ROLE)
+        reader.groups.add(group)
         return reader
 
     def create(self, request, *args, **kwargs):
