@@ -4,7 +4,7 @@ import json
 from datetime import timedelta
 
 from django.contrib.auth.models import Group
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -18,6 +18,7 @@ def _ensure_group(name):
     return group
 
 
+@override_settings(DEFAULT_THROTTLE_RATES={"token": "1000/min"})
 class LibraryTestCase(APITestCase):
     def setUp(self):
         self.librarian_group = _ensure_group(roles.LIBRARIAN_ROLE)
