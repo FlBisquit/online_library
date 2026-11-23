@@ -1,30 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { apiClient, clearTokens, getAccessToken, getRefreshToken, setTokens } from "../api/client";
+import { apiClient, clearTokens, getAccessToken, getRefreshToken, setTokens, setAuthLostHandler } from "../api/client";
 
 const AuthContext = createContext(null);
-
-const decodeTokenPayload = (token) => {
-  try {
-    const payload = token.split(".")[1];
-    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const json = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((c) => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`)
-        .join(""),
-    );
-    return JSON.parse(json);
-  } catch {
-    return {};
-  }
-};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [initialized, setInitialized] = useState(false);
 
-  const loadUser = useCallback(async (accessToken) => {
-    const payload = decodeTokenPayload(accessToken);
+  const loadUser = useCallback(async () => {
     const me = await apiClient.get("/auth/me/");
     return {
       ...me,
@@ -35,11 +18,16 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    setAuthLostHandler(() => setUser(null));
+    return () => setAuthLostHandler(null);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     const restore = async () => {
       if (getAccessToken()) {
         try {
-          const userData = await loadUser(getAccessToken());
+          const userData = await loadUser();
           if (!cancelled) setUser(userData);
         } catch {
           // Сессия не восстановлена — показываем экран входа.
@@ -57,7 +45,7 @@ export const AuthProvider = ({ children }) => {
     async (email, password) => {
       const data = await apiClient.post("/token/", { email, password });
       setTokens({ access: data.access, refresh: data.refresh });
-      const userData = await loadUser(data.access);
+      const userData = await loadUser();
       setUser(userData);
       return userData;
     },
@@ -77,9 +65,17 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   }, []);
 
+  const register = useCallback(
+    async ({ email, password, fullName, phone }) => {
+      await apiClient.post("/auth/register/", { full_name: fullName, email, password, phone });
+      return login(email, password);
+    },
+    [login],
+  );
+
   const value = useMemo(
-    () => ({ user, initialized, login, logout, setUser }),
-    [user, initialized, login, logout],
+    () => ({ user, initialized, login, logout, register, setUser }),
+    [user, initialized, login, logout, register],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

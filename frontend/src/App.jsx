@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "./auth/AuthContext";
+import { Loading } from "./components/Loading";
 import { LoginPage } from "./pages/LoginPage";
 import { CatalogPage } from "./pages/CatalogPage";
 import { MyLoansPage } from "./pages/MyLoansPage";
@@ -11,7 +12,11 @@ export const App = () => {
   const [activeId, setActiveId] = useState("catalog");
 
   if (!initialized) {
-    return <div className="page">Загрузка...</div>;
+    return (
+      <div className="page">
+        <Loading message="Загрузка..." />
+      </div>
+    );
   }
 
   if (!user) {

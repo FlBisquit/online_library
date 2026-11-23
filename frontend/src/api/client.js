@@ -61,7 +61,15 @@ const refreshAccessToken = async () => {
   if (!refresh) return null;
   if (!refreshPromise) {
     refreshPromise = (async () => {
-      const data = await apiClient.post("/token/refresh/", { refresh });
+      const response = await fetch(`${BASE_URL}token/refresh/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.access) {
+        throw new Error("Не удалось обновить токен доступа.");
+      }
       setTokens({ access: data.access, refresh: data.refresh ?? refresh });
       return data.access;
     })().finally(() => {
@@ -86,7 +94,12 @@ async function request(path, options = {}) {
 
   let response = await doFetch(getAccessToken());
   if (response.status === 401) {
-    const newToken = await refreshAccessToken();
+    let newToken = null;
+    try {
+      newToken = await refreshAccessToken();
+    } catch {
+      newToken = null;
+    }
     if (!newToken) {
       clearTokens();
       if (authLostHandler) authLostHandler();
