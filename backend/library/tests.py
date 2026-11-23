@@ -1,5 +1,7 @@
 """Tests for the library app."""
 import base64
+import csv
+import io
 import json
 from datetime import datetime, timedelta, timezone as dt_timezone
 from unittest.mock import patch
@@ -538,6 +540,54 @@ class ReportsTests(LibraryTestCase):
         with self.assertNumQueries(2):
             response = self.client.get("/api/reports/books/", self.period)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def _parse_csv(self, response):
+        self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
+        return list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+
+    def test_csv_matches_json_and_has_excel_headers(self):
+        self._seed_data()
+        self.client.force_authenticate(self.librarian)
+        json_response = self.client.get("/api/reports/books/", self.period)
+        csv_response = self.client.get("/api/reports/books/export/", self.period)
+
+        self.assertEqual(csv_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(csv_response["Content-Type"].startswith("text/csv"))
+        self.assertEqual(
+            csv_response["Content-Disposition"],
+            'attachment; filename="report_2026-11-01_2026-11-30.csv"',
+        )
+        rows = self._parse_csv(csv_response)
+        self.assertEqual(rows[0], ["ID", "Книга", "Выдачи", "Просрочено", "Отмены"])
+        expected = [
+            [str(row["book_id"]), row["title"], str(row["loans"]), str(row["overdue"]), str(row["cancellations"])]
+            for row in json_response.data
+        ]
+        self.assertEqual(rows[1:], expected)
+
+    def test_csv_escapes_formula_prefixes(self):
+        for index, title in enumerate(["=SUM(1+1)", "+CMD", "-CMD", "@SUM"]):
+            models.Book.objects.create(title=title, isbn=f"978-5-900-000-00-{index}")
+        self.client.force_authenticate(self.librarian)
+        response = self.client.get("/api/reports/books/export/", self.period)
+        rows = self._parse_csv(response)
+        titles = {row[1]: row for row in rows[1:]}
+        for dangerous in ["=SUM(1+1)", "+CMD", "-CMD", "@SUM"]:
+            with self.subTest(title=dangerous):
+                self.assertIn(f"'{dangerous}", titles)
+                self.assertNotIn(dangerous, [row[1] for row in rows[1:]])
+
+    def test_export_reader_is_forbidden(self):
+        self.client.force_authenticate(self.reader)
+        response = self.client.get("/api/reports/books/export/", self.period)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_export_invalid_dates_return_400(self):
+        self.client.force_authenticate(self.librarian)
+        response = self.client.get(
+            "/api/reports/books/export/", {"date_from": "garbage", "date_to": "2026-11-30"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_old_report_endpoints_are_removed(self):
         self.client.force_authenticate(self.librarian)
