@@ -310,3 +310,46 @@ AI Driven Development и приступить к доведению проект
 ### Итоговый статус
 
 Истечение резервов работает лениво и через cron; просроченные брони больше не блокируют экземпляры.
+
+## 2026-11-23 — Единая карта переходов статусов
+
+### Задача
+
+- Заменить разбросанные проверки статусов единой картой переходов.
+- Реализовать OVERDUE и LOST, запретить self-service возврат.
+- Хранить в ActionLog старый и новый статус, логировать все изменения, включая
+  FULFILLED и EXPIRED.
+
+### Что исправлено
+
+- Новый `library/transitions.py`: карты `ISSUE_TRANSITIONS`, `RESERVATION_TRANSITIONS`,
+  `BOOK_COPY_TRANSITIONS` и функция `change_status(obj, new_status, user, **extra)`.
+  Недопустимый переход -> `Conflict` (409) «Переход из X в Y нельзя». Изменение
+  объекта и запись ActionLog происходят в одной транзакции.
+- `ActionLog`: поля `entity_type`, `entity_id`, `old_status`, `new_status` и индексы
+  `(entity_type, entity_id)` и `created_at`; миграция `0007_actionlog_status_transition`.
+- `services.py`: все смены статусов идут только через `change_status`, включая
+  FULFILLED (выдача), EXPIRED (истечение), RESERVED (продвижение очереди).
+  Добавлены `mark_overdue()` (UPDATE просроченных ISSUED -> OVERDUE) и
+  `mark_issue_lost()` (выдача и экземпляр -> LOST). Возврат разрешён для
+  ISSUED, OVERDUE и LOST.
+- Права: `IssueReturnView` и новый `IssueMarkLostView` — `IsLibrarianOrAdmin`;
+  читатель может отменить только свою бронь, сотрудник — любую.
+- Новый эндпоинт `POST /api/issues/<id>/mark-lost/`; ленивый `mark_overdue()` при
+  выдаче списков выдач; management command `manage.py mark_overdue` для cron.
+- `BookCopySerializer` запрещает вручную выставлять ISSUED и RESERVED.
+
+### Финальные проверки
+
+- `python manage.py check` — OK.
+- `python manage.py makemigrations --check` — изменений нет.
+- `python manage.py test` — OK (130 тестов, MySQL), включая параметризованную
+  матрицу всех пар статусов для Issue/Reservation/BookCopy, проверку отката
+  статуса и журнала при исключении, права 403, mark_overdue и mark-lost.
+- `python manage.py mark_overdue` — OK (0 обработано).
+- `npx vite build` — не требуется (frontend не менялся).
+
+### Итоговый статус
+
+Переходы статусов централизованы, просрочки и утеря обрабатываются, журнал содержит
+полную историю изменений с old_status/new_status.
