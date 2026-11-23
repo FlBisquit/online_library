@@ -1173,6 +1173,45 @@ class StatusTransitionTests(LibraryTestCase):
         self.assertEqual(expired_log.new_status, models.Reservation.Status.EXPIRED)
 
 
+class CancellationTimestampTests(LibraryTestCase):
+    """Момент отмены брони фиксируется в cancelled_at."""
+
+    def _reservation(self, status):
+        return models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            status=status,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() + timedelta(hours=48),
+            active_slot=None,
+        )
+
+    def test_change_status_sets_cancelled_at(self):
+        reservation = self._reservation(models.Reservation.Status.PENDING)
+        before = timezone.now()
+        services.change_status(
+            reservation, models.Reservation.Status.CANCELLED, user=self.librarian
+        )
+        reservation.refresh_from_db()
+        self.assertIsNotNone(reservation.cancelled_at)
+        self.assertGreaterEqual(reservation.cancelled_at, before)
+
+    def test_other_transitions_leave_cancelled_at_empty(self):
+        reservation = self._reservation(models.Reservation.Status.ACTIVE)
+        services.change_status(
+            reservation, models.Reservation.Status.FULFILLED, user=self.librarian
+        )
+        reservation.refresh_from_db()
+        self.assertIsNone(reservation.cancelled_at)
+
+    def test_cancel_service_sets_cancelled_at(self):
+        reservation = self._reservation(models.Reservation.Status.PENDING)
+        services.cancel_reservation(reservation.id, user=self.reader)
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.status, models.Reservation.Status.CANCELLED)
+        self.assertIsNotNone(reservation.cancelled_at)
+
+
 class ActionLogApiTests(LibraryTestCase):
     """Эндпоинт журнала действий: права, фильтры, формат и N+1."""
 
