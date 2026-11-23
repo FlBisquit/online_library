@@ -1,4 +1,6 @@
 """Tests for the library app."""
+import base64
+import json
 from datetime import timedelta
 
 from django.contrib.auth.models import Group
@@ -101,6 +103,23 @@ class LibraryTestCase(APITestCase):
             format="json",
         )
         self.assertEqual(refreshed_after_blacklist.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_access_token_lifetime_is_15_minutes(self):
+        response = self.client.post(
+            "/api/token/",
+            {"email": "reader@test.local", "password": "ReaderPass123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        access_token = response.data["access"]
+        payload = json.loads(
+            base64.urlsafe_b64decode(
+                access_token.split(".")[1] + "=" * (-len(access_token.split(".")[1]) % 4)
+            )
+        )
+        self.assertIn("exp", payload)
+        self.assertIn("iat", payload)
+        self.assertEqual(payload["exp"] - payload["iat"], 900)
 
     def test_access_token_required_for_protected_endpoint(self):
         response = self.client.get(f"/api/readers/{self.reader.id}/")
