@@ -191,3 +191,13 @@ class IssueTests(LibraryTestCase):
         self.assertEqual(first.status_code, status.HTTP_200_OK)
         second = self.client.post(f"/api/issues/{issue.id}/return/", {}, format="json")
         self.assertEqual(second.status_code, status.HTTP_409_CONFLICT)
+
+    def test_issue_with_malformed_ids_returns_400(self):
+        self.client.force_authenticate(self.librarian)
+        for payload in (
+            {"reader_id": self.reader.id, "copy_id": "not-a-number"},
+            {"reader_id": "not-a-number", "copy_id": self.copy.id},
+        ):
+            with self.subTest(payload=payload):
+                response = self.client.post("/api/issues/", payload, format="json")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
