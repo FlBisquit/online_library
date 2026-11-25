@@ -23,3 +23,5 @@
 
 - `select_for_update` всегда вызывать внутри `transaction.atomic()` и до проверок
   доступности; порядок блокировок: Book → BookCopy → Reservation → Issue.
+- Конкурентные тесты запускать только на MySQL и в `TransactionTestCase`;
+  SQLite не поддерживает `SELECT FOR UPDATE` и даёт `database is locked`.
