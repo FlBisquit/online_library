@@ -86,6 +86,30 @@ const refreshAccessToken = async () => {
   return refreshPromise;
 };
 
+async function fetchWithTokenRefresh(doFetch) {
+  let response = await doFetch(getAccessToken());
+  if (response.status !== 401) return response;
+
+  let newToken = null;
+  try {
+    newToken = await refreshAccessToken();
+  } catch {
+    newToken = null;
+  }
+  if (!newToken) {
+    clearTokens();
+    if (authLostHandler) authLostHandler();
+    throw new Error("Сессия истекла. Не удалось обновить токен.");
+  }
+  response = await doFetch(newToken);
+  if (response.status === 401) {
+    clearTokens();
+    if (authLostHandler) authLostHandler();
+    throw new Error("Сессия истекла. Повторная авторизация требуется.");
+  }
+  return response;
+}
+
 async function request(path, options = {}) {
   const { headers, params, ...rest } = options;
   const url = buildUrl(path, params);
@@ -99,26 +123,7 @@ async function request(path, options = {}) {
       },
     });
 
-  let response = await doFetch(getAccessToken());
-  if (response.status === 401) {
-    let newToken = null;
-    try {
-      newToken = await refreshAccessToken();
-    } catch {
-      newToken = null;
-    }
-    if (!newToken) {
-      clearTokens();
-      if (authLostHandler) authLostHandler();
-      throw new Error("Сессия истекла. Не удалось обновить токен.");
-    }
-    response = await doFetch(newToken);
-    if (response.status === 401) {
-      clearTokens();
-      if (authLostHandler) authLostHandler();
-      throw new Error("Сессия истекла. Повторная авторизация требуется.");
-    }
-  }
+  const response = await fetchWithTokenRefresh(doFetch);
 
   const text = await response.text();
   let data = null;
@@ -138,12 +143,14 @@ async function request(path, options = {}) {
 
 async function download(path, params) {
   const url = buildUrl(path, params);
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
-    },
-  });
+  const doFetch = (token) =>
+    fetch(url, {
+      method: "GET",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  const response = await fetchWithTokenRefresh(doFetch);
   if (!response.ok) {
     const text = await response.text();
     let data = null;

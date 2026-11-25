@@ -16,8 +16,10 @@ export const MyLoansPage = () => {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [returningId, setReturningId] = useState(null);
   const [cancellingId, setCancellingId] = useState(null);
+  const canReturn = (user?.roles ?? []).some(
+    (role) => role === "librarian" || role === "admin",
+  );
   const [historyPage, setHistoryPage] = useState(1);
 
   const loadIssues = useCallback(async () => {
@@ -55,20 +57,6 @@ export const MyLoansPage = () => {
   useEffect(() => {
     loadReservations();
   }, [loadReservations]);
-
-  const handleReturn = async (issueId) => {
-    setReturningId(issueId);
-    setError(null);
-    try {
-      await apiClient.post(`/issues/${issueId}/return/`, {});
-      await loadIssues();
-      await loadReservations();
-    } catch (e) {
-      setError(extractGeneralError(e));
-    } finally {
-      setReturningId(null);
-    }
-  };
 
   const handleCancelReservation = async (reservationId) => {
     const reservation = reservations.find((item) => item.id === reservationId);
@@ -121,13 +109,9 @@ export const MyLoansPage = () => {
                 {isOverdue(issue) ? " — просрочено" : ""}
               </div>
               <div className="book-meta">Срок: {formatDateTime(issue.due_at)}</div>
-              <button
-                className="btn"
-                disabled={returningId === issue.id}
-                onClick={() => handleReturn(issue.id)}
-              >
-                {returningId === issue.id ? "Возврат..." : "Вернуть книгу"}
-              </button>
+              {canReturn && (
+                <div className="book-meta">Возврат выполняется в панели сотрудника.</div>
+              )}
             </div>
           ))}
         </div>
