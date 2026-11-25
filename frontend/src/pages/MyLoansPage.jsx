@@ -116,12 +116,11 @@ export const MyLoansPage = () => {
           {currentIssues.map((issue) => (
             <div key={issue.id} className="book-card">
               <div className="book-title">{issue.book?.title ?? `Выдача #${issue.id}`}</div>
-              <div className="book-meta">
+              <div className={`book-meta ${isOverdue(issue) ? "overdue" : ""}`}>
                 Статус: {statusLabel(issue.status)}
                 {isOverdue(issue) ? " — просрочено" : ""}
               </div>
               <div className="book-meta">Срок: {formatDateTime(issue.due_at)}</div>
-              {isOverdue(issue) && <div className="book-meta">Книга просрочена.</div>}
               <button
                 className="btn"
                 disabled={returningId === issue.id}
@@ -148,7 +147,11 @@ export const MyLoansPage = () => {
                   ? `Позиция: ${reservation.position} из ${reservation.total ?? 0}`
                   : "Позиция пока не определена"}
               </div>
-              <div className="book-meta">Ожидание до: {formatDateTime(reservation.expires_at)}</div>
+              <div className="book-meta">
+                {reservation.status === "ACTIVE"
+                  ? `Книга ждёт вас до ${formatDateTime(reservation.expires_at)}`
+                  : `Ожидание в очереди до ${formatDateTime(reservation.expires_at)}`}
+              </div>
               <div className="book-meta">Статус: {statusLabel(reservation.status)}</div>
               {(reservation.status === "PENDING" || reservation.status === "ACTIVE") && (
                 <button

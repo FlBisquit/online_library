@@ -138,6 +138,11 @@ body {
   margin-top: 4px;
 }
 
+.book-meta.overdue {
+  color: #b3261e;
+  font-weight: 600;
+}
+
 .pagination {
   display: flex;
   align-items: center;
