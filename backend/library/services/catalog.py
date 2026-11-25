@@ -56,6 +56,27 @@ def update_copy(copy_id, *, user=None, inventory_number=None, status=None):
                     "Возврат экземпляра в AVAILABLE выполняется только сервисами "
                     "выдачи и бронирования."
                 )
+            if status == models.BookCopy.Status.RETIRED:
+                open_issue = (
+                    models.Issue.objects.filter(copy=copy)
+                    .exclude(status=models.Issue.Status.RETURNED)
+                    .exists()
+                )
+                live_reservations = list(
+                    models.Reservation.objects.select_for_update()
+                    .filter(
+                        copy=copy,
+                        status__in=[
+                            models.Reservation.Status.PENDING,
+                            models.Reservation.Status.ACTIVE,
+                        ],
+                    )
+                    .order_by("queue_date", "id")
+                )
+                if open_issue or live_reservations:
+                    raise Conflict(
+                        "Нельзя списать экземпляр с открытой выдачей или активным бронированием."
+                    )
             change_status(copy, status, user=user)
         if inventory_number and inventory_number != copy.inventory_number:
             copy.inventory_number = inventory_number

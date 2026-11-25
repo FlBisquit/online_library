@@ -81,30 +81,38 @@ def issue_copy(reader_id, copy_id, user=None):
         if reader.status != models.Reader.Status.ACTIVE:
             raise Conflict("Читатель не может получать книги (статус BLOCKED/SUSPENDED).")
 
+        active_reservation = (
+            models.Reservation.objects.select_for_update()
+            .filter(
+                reader=reader,
+                book=book,
+                status=models.Reservation.Status.ACTIVE,
+                active_slot=1,
+            )
+            .order_by("queue_date", "id")
+            .first()
+        )
         reservation = None
         if copy.status == models.BookCopy.Status.RESERVED:
-            reservation = (
-                models.Reservation.objects.select_for_update()
-                .filter(
-                    reader=reader,
-                    book=book,
-                    status=models.Reservation.Status.ACTIVE,
-                    active_slot=1,
-                )
-                .order_by("queue_date", "id")
-                .first()
-            )
-            if reservation is None:
+            reservation = active_reservation
+            if reservation is None or reservation.copy_id != copy.pk:
                 raise Conflict("Экземпляр зарезервирован для другого читателя.")
+        elif (
+            copy.status == models.BookCopy.Status.AVAILABLE
+            and active_reservation is not None
+        ):
+            # Иначе активная бронь читателя останется на другом экземпляре.
+            raise Conflict("Сначала получите или отмените книгу по вашей брони.")
 
         if copy.status != models.BookCopy.Status.AVAILABLE and reservation is None:
             raise Conflict("Экземпляр книги сейчас недоступен для выдачи.")
 
+        now = timezone.now()
         issue = models.Issue.objects.create(
             reader=reader,
             copy=copy,
-            issued_at=timezone.now(),
-            due_at=timezone.now() + constants.LOAN_PERIOD,
+            issued_at=now,
+            due_at=now + constants.LOAN_PERIOD,
             status=models.Issue.Status.ISSUED,
         )
         change_status(copy, models.BookCopy.Status.ISSUED, user=user)
@@ -164,10 +172,16 @@ def return_issue(issue_id, return_date=None, user=None):
             returned_at=now,
         )
 
-        if copy.status != models.BookCopy.Status.AVAILABLE:
+        promotable_copy = copy
+        if copy.status == models.BookCopy.Status.RETIRED:
+            # Унаследованное от старой ошибки состояние: закрываем выдачу,
+            # но не возвращаем списанный экземпляр в обращение.
+            promotable_copy = None
+        elif copy.status != models.BookCopy.Status.AVAILABLE:
             change_status(copy, models.BookCopy.Status.AVAILABLE, user=user)
 
-        _promote_next(book, copy, user=user, reservation=next_reservation)
+        if promotable_copy is not None:
+            _promote_next(book, promotable_copy, user=user, reservation=next_reservation)
 
         _log_action(user, "issue.return", {"issue_id": issue.id, "copy_id": copy.id})
 
@@ -249,18 +263,24 @@ def cancel_reservation(reservation_id, user=None):
         ):
             copy = _lock_copy(info["copy_id"])
         reservation = _lock_reservation(reservation_id)
+        if reservation.copy_id != info["copy_id"]:
+            raise Conflict("Экземпляр бронирования изменился параллельно; повторите запрос.")
         if reservation.status not in (
             models.Reservation.Status.PENDING,
             models.Reservation.Status.ACTIVE,
         ):
             raise Conflict("Отменить можно только активное или ожидающее бронирование.")
 
+        promotable_copy = None
         if (
             reservation.status == models.Reservation.Status.ACTIVE
             and copy is not None
             and copy.status == models.BookCopy.Status.RESERVED
         ):
             change_status(copy, models.BookCopy.Status.AVAILABLE, user=user)
+            promotable_copy = copy
+        elif copy is not None and copy.status == models.BookCopy.Status.AVAILABLE:
+            promotable_copy = copy
 
         change_status(
             reservation,
@@ -268,7 +288,7 @@ def cancel_reservation(reservation_id, user=None):
             user=user,
             active_slot=None,
         )
-        _promote_next(book, copy, user=user)
+        _promote_next(book, promotable_copy, user=user)
 
         _log_action(user, "reservation.cancel", {"reservation_id": reservation.id, "book_id": book.id})
 
@@ -282,6 +302,8 @@ def _promote_next(book, available_copy, user=None, reservation=None):
     порядок блокировок Book -> BookCopy -> Reservation -> Issue.
     """
     if available_copy is None:
+        return None
+    if available_copy.status != models.BookCopy.Status.AVAILABLE:
         return None
     if (
         reservation is not None
@@ -319,11 +341,12 @@ def expire_reservations(book_id=None):
     with transaction.atomic():
         now = timezone.now()
         processed = []
+        skipped = set()
         while True:
             expired = models.Reservation.objects.filter(
                 status=models.Reservation.Status.ACTIVE,
                 expires_at__lt=now,
-            )
+            ).exclude(pk__in=skipped)
             if book_id is not None:
                 expired = expired.filter(book_id=book_id)
             candidate = expired.order_by("book_id", "queue_date", "id").first()
@@ -342,9 +365,18 @@ def expire_reservations(book_id=None):
                 or reservation.expires_at >= now
             ):
                 continue
+            if reservation.copy_id != candidate.copy_id:
+                # Экземпляр переназначен параллельно: в этой итерации его
+                # трогать нельзя, а повторный выбор не должен зациклиться.
+                skipped.add(candidate.pk)
+                continue
 
+            promotable_copy = None
             if copy is not None and copy.status == models.BookCopy.Status.RESERVED:
                 change_status(copy, models.BookCopy.Status.AVAILABLE, user=None)
+                promotable_copy = copy
+            elif copy is not None and copy.status == models.BookCopy.Status.AVAILABLE:
+                promotable_copy = copy
             change_status(
                 reservation,
                 models.Reservation.Status.EXPIRED,
@@ -360,7 +392,7 @@ def expire_reservations(book_id=None):
                     "copy_id": copy.id if copy is not None else None,
                 },
             )
-            _promote_next(book, copy)
+            _promote_next(book, promotable_copy)
             processed.append(reservation)
         return processed
 

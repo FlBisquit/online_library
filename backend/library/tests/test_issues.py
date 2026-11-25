@@ -203,18 +203,55 @@ class IssueTests(LibraryTestCase):
                 response = self.client.post("/api/issues/", payload, format="json")
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_reader_with_active_reservation_cannot_take_available_copy(self):
+        reserved_copy = models.BookCopy.objects.create(
+            book=self.book, inventory_number="INV-ACTIVE-1", status=models.BookCopy.Status.RESERVED
+        )
+        available_copy = models.BookCopy.objects.create(
+            book=self.book, inventory_number="INV-AVAILABLE-2"
+        )
+        reservation = models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            copy=reserved_copy,
+            status=models.Reservation.Status.ACTIVE,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() + timedelta(hours=48),
+            active_slot=1,
+        )
+        with self.assertRaises(Conflict):
+            services.issue_copy(self.reader.id, available_copy.id, user=self.librarian)
+        available_copy.refresh_from_db()
+        reservation.refresh_from_db()
+        self.assertEqual(available_copy.status, models.BookCopy.Status.AVAILABLE)
+        self.assertEqual(reservation.status, models.Reservation.Status.ACTIVE)
+
     def test_reserved_copy_is_issued_only_to_its_reserved_reader(self):
         second_copy = models.BookCopy.objects.create(
-            book=self.book, inventory_number="INV-RESERVED-2"
+            book=self.book,
+            inventory_number="INV-RESERVED-2",
+            status=models.BookCopy.Status.RESERVED,
         )
-        first_issue = services.issue_copy(
-            self.reader.id, self.copy.id, user=self.librarian
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        reservation_a = models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            copy=self.copy,
+            status=models.Reservation.Status.ACTIVE,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() + timedelta(hours=48),
+            active_slot=1,
         )
-        services.return_issue(first_issue.id, user=self.librarian)
-        second_issue = services.issue_copy(
-            self.other_reader.id, second_copy.id, user=self.librarian
+        reservation_b = models.Reservation.objects.create(
+            reader=self.other_reader,
+            book=self.book,
+            copy=second_copy,
+            status=models.Reservation.Status.ACTIVE,
+            queue_date=timezone.now() + timedelta(hours=48),
+            expires_at=timezone.now() + timedelta(hours=96),
+            active_slot=1,
         )
-        services.return_issue(second_issue.id, user=self.librarian)
 
         with self.assertRaises(Conflict):
             services.issue_copy(self.reader.id, second_copy.id, user=self.librarian)
@@ -223,20 +260,26 @@ class IssueTests(LibraryTestCase):
         second_copy.refresh_from_db()
         self.assertEqual(self.copy.status, models.BookCopy.Status.RESERVED)
         self.assertEqual(second_copy.status, models.BookCopy.Status.RESERVED)
-        reservation_a = models.Reservation.objects.get(reader=self.reader)
-        reservation_b = models.Reservation.objects.get(reader=self.other_reader)
+        reservation_a.refresh_from_db()
+        reservation_b.refresh_from_db()
         self.assertEqual(reservation_a.copy_id, self.copy.id)
         self.assertEqual(reservation_b.copy_id, second_copy.id)
         self.assertEqual(reservation_a.status, models.Reservation.Status.ACTIVE)
         self.assertEqual(reservation_b.status, models.Reservation.Status.ACTIVE)
-        self.assertEqual(models.Issue.objects.count(), 2)
+        self.assertEqual(models.Issue.objects.count(), 0)
 
     def test_issue_due_at_uses_the_same_clock_as_issued_at(self):
-        base = dt_timezone.now()
+        base = timezone.now()
         later = base + timedelta(seconds=1)
-        with patch(
-            "library.services.timezone.now", side_effect=[base, base, later]
-        ):
+        clocks = iter([base, base])
+
+        def fake_now():
+            try:
+                return next(clocks)
+            except StopIteration:
+                return later
+
+        with patch("library.services.timezone.now", side_effect=fake_now):
             issue = services.issue_copy(self.reader.id, self.copy.id)
         self.assertEqual(issue.due_at - issue.issued_at, constants.LOAN_PERIOD)
 
@@ -295,3 +338,37 @@ class IssueTests(LibraryTestCase):
         self.copy.refresh_from_db()
         self.assertEqual(reservation.status, models.Reservation.Status.ACTIVE)
         self.assertEqual(self.copy.status, models.BookCopy.Status.RESERVED)
+
+    def test_return_with_legacy_retired_copy_completes_issue(self):
+        self.copy.status = models.BookCopy.Status.RETIRED
+        self.copy.save(update_fields=["status"])
+        issue = models.Issue.objects.create(
+            reader=self.reader,
+            copy=self.copy,
+            issued_at=timezone.now(),
+            due_at=timezone.now() + timedelta(days=14),
+            status=models.Issue.Status.ISSUED,
+        )
+        returned = services.return_issue(issue.id, user=self.librarian)
+        self.copy.refresh_from_db()
+        self.assertEqual(returned.status, models.Issue.Status.RETURNED)
+        self.assertEqual(self.copy.status, models.BookCopy.Status.RETIRED)
+
+    def test_expire_with_legacy_retired_copy_completes_reservation(self):
+        self.copy.status = models.BookCopy.Status.RETIRED
+        self.copy.save(update_fields=["status"])
+        reservation = models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            copy=self.copy,
+            status=models.Reservation.Status.ACTIVE,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() - timedelta(hours=1),
+            active_slot=1,
+        )
+        processed = services.expire_reservations(self.book.id)
+        self.copy.refresh_from_db()
+        reservation.refresh_from_db()
+        self.assertEqual(len(processed), 1)
+        self.assertEqual(reservation.status, models.Reservation.Status.EXPIRED)
+        self.assertEqual(self.copy.status, models.BookCopy.Status.RETIRED)
