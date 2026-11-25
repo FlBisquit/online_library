@@ -1,13 +1,15 @@
 # Сессия 04 — Истечение резервов и hardening настроек
 
-- Время: 2026-11-23 13:39–13:44 +05:00
+- Время: 2026-11-23 13:39–13:45 +05:00
 - Текст исходного промпта в репозитории не сохранился и не восстанавливался.
   Запись составлена из фактических коммитов и предыдущих записей AI_LOG.
 
 ## Коммиты
 
 - `0c488be Add reservation expiry management command`
+- `5e23974 Update AI log with reservation expiry stage`
 - `c7e0a6a Harden Django settings, JWT lifetime and dependency requirements`
+- `eece12e Update AI log with settings hardening stage`
 
 ## Результат
 

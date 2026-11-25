@@ -28,7 +28,8 @@
   JWT, сериализаторы, views/services, тесты с конкурентной выдачей.
 - **Сессия:** `docs/prompts/online-library-audit-and-implementation.md`
   (текст промпта сохранён), 2026-11-16 11:48–12:10 +05:00.
-- **Результат:** миграции, API каталога/выдач/очереди, `ActionLog`, 42 теста,
+- **Результат:** коммиты `9238407`, `3bdf244`, `e41a66b`, `474b07b`, `c265dc2`,
+  `c71288a`. Миграции, API каталога/выдач/очереди, `ActionLog`, 42 теста,
   `manage.py check`, `migrate`, `test` и `vite build` — зелёные.
 - **Что пришлось исправить:** дублирование модели `Reader`; неверный импорт
   `Conflict` из `rest_framework.exceptions`; `get_permissions()` возвращал классы
@@ -43,7 +44,9 @@
 - **Сессия:** `docs/prompts/online-library-audit-and-implementation.md`
   (текст промпта сохранён), 2026-11-16 12:12–12:27 +05:00.
 - **Результат:** `ef77a12`, `8aa18cf`, `4f27e0b`, `2faef36`, `dc58680`,
-  `ddfdcac`, `b8970d8`, `e661e24`. Созданы `docs/SPEC.md`, `docs/PLAN.md`,
+  `57405a9`, `ddfdcac`, `b8970d8`, `e661e24`. Добавлены действие выхода в
+  навигации (`57405a9`) и обработка истёкших броней при продвижении очереди
+  (`ddfdcac`). Созданы `docs/SPEC.md`, `docs/PLAN.md`,
   `docs/AI_REVIEW.md`, `CONVENTIONS.md`, `.aider.conf.yml`.
 - **Что пришлось исправить:** расхождение с `docs/API_DESIGN.md`: публичная
   регистрация оставлена на `POST /api/readers/` как рабочая схема (позже перенесена
@@ -55,8 +58,8 @@
 
 - **Задача:** добавить команду истечения броней, убрать небезопасные дефолты
   настроек и задать срок access token.
-- **Сессия:** `docs/prompts/session-04.md`, 2026-11-23 13:39–13:44 +05:00.
-- **Результат:** `0c488be`, `c7e0a6a`. `BASE_DIR` указывает на `backend`,
+- **Сессия:** `docs/prompts/session-04.md`, 2026-11-23 13:39–13:45 +05:00.
+- **Результат:** `0c488be`, `5e23974`, `c7e0a6a`, `eece12e`. `BASE_DIR` указывает на `backend`,
   `SECRET_KEY` и `DATABASE_URL` обязательны, `DEBUG=False` по умолчанию,
   `CSRF_TRUSTED_ORIGINS`, access token 15 минут, DRF throttling.
 - **Что пришлось исправить:** `expire_reservations()` падал с
@@ -69,7 +72,7 @@
 - **Задача:** зафиксировать срок access token тестом и ограничить частоту
   получения токенов.
 - **Сессия:** `docs/prompts/session-05.md`, 2026-11-23 13:45–13:51 +05:00.
-- **Результат:** `513b785`, `12896f7`, `c2e6d74`, `eece12e`. Scope `token`
+- **Результат:** `513b785`, `12896f7`, `c2e6d74`. Scope `token`
   10/min, тест `exp - iat = 900` секунд.
 - **Что пришлось исправить:** scope позже оказался не подключён из-за опечатки
   `throttling_class` (найдено аудитом 18, остаётся открытым); полный прогон
@@ -223,6 +226,21 @@
 - **Что пришлось исправить:** не применялось — сессия была аудиторской; часть
   найденного закрыта более ранними коммитами, остальное зафиксировано как открытое.
 
+## 19. 2026-11-26 — Приведение процессных документов и Aider-конфигурации
+
+- **Задача:** убрать расхождения в `CONVENTIONS.md`, `.aider.conf.yml`,
+  `.aiderignore`, `docs/`; перенести AI-журнал в `docs/` и не выдумывать историю
+  промптов.
+- **Сессия:** `docs/prompts/session-19.md`, 2026-11-26 02:19:49–02:27:32 +05:00.
+- **Результат:** `c19c816`, `8eba60d`, `dff6d89`, `7ccecf3`, `2dd8176`,
+  `d7ad8cf`, `59e9f13`, `b233068`, `b49dfa6`, `133640d`, `eeeb4e4`, `7d7419a`.
+  Бесплатная модель в Aider, history-файлы и `.aiderignore`, семь правил агента,
+  честные `docs/AI_LOG.md`, `docs/AI_REVIEW.md`, `docs/PLAN.md`, `docs/SPEC.md`.
+- **Что пришлось исправить:** ложные утверждения старых документов (SECRET_KEY,
+  rate limiting, журнал действий, «SPEC до кода»); пропущенные коммиты в журнале
+  (`57405a9`, `5e23974`, `eece12e`, конфигурационные коммиты) добавлены при
+  повторной сверке с `git log`.
+
 ## Ошибки агента
 
 ### 1. `BASE_DIR` указывал на корень репозитория
@@ -313,3 +331,129 @@
 - **Как исправлено:** `_ensure_password()` сохраняет пользователя после смены
   пароля.
 - **Коммит:** `ac53225`.
+
+## Приложение A — полный индекс коммитов
+
+Сверка с `git log` на момент написания: 117 коммитов, от `b5876b3`
+до `7d7419a`. Каждый хеш встречается либо в записи `docs/AI_LOG.md`,
+либо в карточке сессии в `docs/prompts/`, либо в этом индексе. Коммит, который
+добавляет этот индекс, не может сослаться на собственный хеш — он будет покрыт
+при следующей сверке.
+
+- `7d7419a` 2026-11-26T02:27:32+05:00 — Document honest AI session history and security audit
+- `eeeb4e4` 2026-11-26T02:22:13+05:00 — Update conventions for current layout
+- `133640d` 2026-11-26T02:21:57+05:00 — Add rule: schema changes require migrations
+- `b49dfa6` 2026-11-26T02:21:04+05:00 — Add rule: BASE_DIR for backend env
+- `b233068` 2026-11-26T02:20:54+05:00 — Add rule: assign role on user creation
+- `59e9f13` 2026-11-26T02:20:42+05:00 — Add rule: one route per path
+- `d7ad8cf` 2026-11-26T02:20:30+05:00 — Add rule: no manual ListSerializer representation
+- `2dd8176` 2026-11-26T02:20:20+05:00 — Add rule: MySQL-only concurrency tests
+- `7ccecf3` 2026-11-26T02:20:11+05:00 — Add rule: lock before checks
+- `dff6d89` 2026-11-26T02:20:01+05:00 — Add Aider history file structure
+- `8eba60d` 2026-11-26T02:19:54+05:00 — Add .aiderignore
+- `c19c816` 2026-11-26T02:19:49+05:00 — Configure Aider with free model and history files
+- `ae6e344` 2026-11-26T02:15:23+05:00 — Document test suite and concurrency protection script
+- `7f296ba` 2026-11-26T02:13:30+05:00 — Use a fresh copy in concurrent booking check
+- `ca85499` 2026-11-26T02:10:24+05:00 — Add concurrent booking protection script
+- `ac53225` 2026-11-26T02:09:48+05:00 — Persist demo login passwords
+- `da30d70` 2026-11-26T02:07:32+05:00 — Validate issue ids before issuing
+- `fe4e1eb` 2026-11-26T02:07:10+05:00 — Add failing test for malformed issue ids
+- `d4b54a3` 2026-11-26T02:06:45+05:00 — Split library tests into focused modules
+- `7eecf13` 2026-11-26T02:06:28+05:00 — Use MD5 password hasher in test settings
+- `fefee9a` 2026-11-26T01:55:14+05:00 — Document librarian reader search and manual scenario
+- `93cfb90` 2026-11-26T01:55:08+05:00 — Highlight overdue loans and active reservation deadlines
+- `4e03029` 2026-11-26T01:55:03+05:00 — Use reader search endpoint in librarian panel
+- `8a69008` 2026-11-26T01:54:58+05:00 — Allow librarians to search readers by email or name
+- `870705f` 2026-11-26T01:42:45+05:00 — Document demo data loader behavior and checks
+- `ffa7381` 2026-11-26T01:42:41+05:00 — Cover demo loader idempotency and state invariants
+- `f989715` 2026-11-26T01:42:37+05:00 — Make demo data loader idempotent and realistic
+- `ca8a1bb` 2026-11-26T01:42:34+05:00 — Add book cover URL to model and serializer
+- `f876454` 2026-11-25T10:56:22+05:00 — Document reader and librarian completion
+- `5390617` 2026-11-25T10:52:26+05:00 — Document reader and librarian manual scenario
+- `599b1d3` 2026-11-25T10:52:05+05:00 — Implement reader loans and librarian panel UI
+- `e948f8c` 2026-11-25T10:50:13+05:00 — Add reader names to reservation serializer
+- `2ce8d92` 2026-11-25T10:46:47+05:00 — Add reader loans and librarian panel APIs
+- `1acff99` 2026-11-23T16:53:46+05:00 — Add backend tests for reader loans and librarian panel
+- `cf482d6` 2026-11-23T16:46:39+05:00 — Document audit fixes and final verification
+- `dd4e8b5` 2026-11-23T16:42:41+05:00 — Remove unused permission and serializer classes
+- `101814f` 2026-11-23T16:38:56+05:00 — Refresh API documentation for current endpoints
+- `a91c3e2` 2026-11-23T16:34:16+05:00 — Lock reservations before issues when returning books
+- `a01edd2` 2026-11-23T16:30:22+05:00 — Add lock order regression test for issue return
+- `7ee7288` 2026-11-23T16:29:07+05:00 — Block copy deletion while live reservations exist
+- `cf0e890` 2026-11-23T16:25:32+05:00 — Add regression test for copy deletion with active reservation
+- `b88b8f9` 2026-11-23T16:25:04+05:00 — Prevent manual copy status reset and clarify admin status options
+- `49159f3` 2026-11-23T16:21:11+05:00 — Add regression test for manual copy status desync
+- `d4ac7b9` 2026-11-23T16:20:50+05:00 — Create reader role group during registration when missing
+- `9d09f07` 2026-11-23T16:17:24+05:00 — Add regression test for registration without role groups
+- `d2c44b0` 2026-11-23T16:12:23+05:00 — Document catalog and user management features
+- `62b5ed5` 2026-11-23T16:10:43+05:00 — Rebuild admin UI for catalog and user management
+- `e1b3705` 2026-11-23T16:01:41+05:00 — Implement admin-only user management API
+- `0973b5a` 2026-11-23T15:56:49+05:00 — Add user management regression tests
+- `b0b4b10` 2026-11-23T15:55:50+05:00 — Implement catalog CRUD and editor permissions
+- `5e2712b` 2026-11-23T15:51:03+05:00 — Add catalog management regression tests
+- `62fe1eb` 2026-11-23T15:47:46+05:00 — Document rewritten book report
+- `0080cb2` 2026-11-23T15:47:10+05:00 — Add book report UI with CSV download
+- `0213e9f` 2026-11-23T15:43:18+05:00 — Add UTF-8 BOM CSV export for book report
+- `102a401` 2026-11-23T15:39:51+05:00 — Add book report CSV regression tests
+- `19bee6c` 2026-11-23T15:39:04+05:00 — Replace issue reports with aggregated book report API
+- `09db97b` 2026-11-23T15:34:48+05:00 — Add book report API regression tests
+- `a7d2a29` 2026-11-23T15:33:52+05:00 — Track reservation cancellation time and report indexes
+- `cb2a568` 2026-11-23T15:29:59+05:00 — Add cancellation timestamp regression tests
+- `b514647` 2026-11-23T15:26:10+05:00 — Document action log API and UI work
+- `521b733` 2026-11-23T15:23:02+05:00 — Add action log screen to admin and librarian panels, correct plan
+- `d58aa31` 2026-11-23T15:11:48+05:00 — Add paginated filtered action log API for staff
+- `7d2512f` 2026-11-23T15:10:01+05:00 — Add action log API regression tests
+- `2711cd8` 2026-11-23T15:07:09+05:00 — Update AI log with status transition and audit changes
+- `1d9bf51` 2026-11-23T15:04:32+05:00 — Add mark_overdue management command for cron
+- `cf17f2c` 2026-11-23T15:04:21+05:00 — Restrict returns to staff, add mark-lost endpoint and lazy overdue marking
+- `75b324d` 2026-11-23T15:01:09+05:00 — Route all service status changes through centralized transition helper
+- `a2eeb8e` 2026-11-23T14:56:33+05:00 — Add centralized status transition map and transactional change_status
+- `1bcbf28` 2026-11-23T14:56:13+05:00 — Add status transition fields and indexes to action log
+- `e4e2229` 2026-11-23T14:55:51+05:00 — Add regression tests for status transitions, overdue and lost issues
+- `a3ca9af` 2026-11-23T14:53:19+05:00 — Update AI log with reservation expiration fixes
+- `8a01a91` 2026-11-23T14:52:51+05:00 — Implement lazy and cron-driven reservation expiration with system audit logs
+- `cbcbb1f` 2026-11-23T14:48:09+05:00 — Allow system action logs without a user
+- `118fa13` 2026-11-23T14:47:44+05:00 — Add regression tests for reservation expiration
+- `2b12f89` 2026-11-23T14:45:25+05:00 — Update AI log with queue and reservation fixes
+- `9d2a967` 2026-11-23T14:45:03+05:00 — Keep BookCopy locks before Reservation locks in queue flows
+- `632122b` 2026-11-23T14:42:52+05:00 — Fix queue listing privacy and join validation
+- `0f99ea2` 2026-11-23T14:36:52+05:00 — Serialize queue operations with consistent lock order
+- `bc6cb6a` 2026-11-23T14:35:39+05:00 — Handle database integrity errors as API conflicts
+- `7e2ffdc` 2026-11-23T14:35:10+05:00 — Replace reservation status uniqueness with active slot and copy link
+- `11cca5f` 2026-11-23T14:34:15+05:00 — Add regression tests for queue and reservation bugs
+- `ec3fb35` 2026-11-23T14:29:05+05:00 — Update AI log with frontend auth task completion
+- `0adfe56` 2026-11-23T14:28:49+05:00 — Relax token rate limit during library test runs
+- `c277f22` 2026-11-23T14:16:39+05:00 — Use shared loading empty and error components in screens
+- `5b0ee8a` 2026-11-23T14:16:39+05:00 — Clear session and handle token refresh failure
+- `c0674e8` 2026-11-23T14:07:35+05:00 — Improve API client refresh flow and fix auth session handling
+- `19eb8d8` 2026-11-23T14:03:31+05:00 — Update AI log with registration and auth task completion
+- `e695e11` 2026-11-23T14:03:04+05:00 — Use current user endpoint in frontend auth flow
+- `457e164` 2026-11-23T14:01:52+05:00 — Add current user endpoint and logout validation tests
+- `97629c2` 2026-11-23T13:59:43+05:00 — Use reader status as user active flag
+- `0e7c4a0` 2026-11-23T13:57:21+05:00 — Implement public reader registration endpoint with password validation
+- `c2e6d74` 2026-11-23T13:51:10+05:00 — Update AI log with access token lifetime test stage
+- `12896f7` 2026-11-23T13:50:51+05:00 — Add access token lifetime test
+- `513b785` 2026-11-23T13:45:34+05:00 — Add scoped rate limit for token endpoint
+- `eece12e` 2026-11-23T13:44:48+05:00 — Update AI log with settings hardening stage
+- `c7e0a6a` 2026-11-23T13:44:23+05:00 — Harden Django settings, JWT lifetime and dependency requirements
+- `5e23974` 2026-11-23T13:39:55+05:00 — Update AI log with reservation expiry stage
+- `0c488be` 2026-11-23T13:39:27+05:00 — Add reservation expiry management command
+- `e661e24` 2026-11-16T12:27:24+05:00 — Update AI log and project plan with final state
+- `57405a9` 2026-11-16T12:26:20+05:00 — Add logout action to frontend navigation
+- `ddfdcac` 2026-11-16T12:26:20+05:00 — Handle expired reservations during queue promotion
+- `b8970d8` 2026-11-16T12:24:26+05:00 — Update project documentation and AI assistant files
+- `dc58680` 2026-11-16T12:21:22+05:00 — Build React frontend screens for library
+- `2faef36` 2026-11-16T12:17:57+05:00 — Expose user groups in reader serializer
+- `4f27e0b` 2026-11-16T12:16:08+05:00 — Add issue and reader list endpoints for panels
+- `8aa18cf` 2026-11-16T12:14:18+05:00 — Add demo data loading command for library
+- `ef77a12` 2026-11-16T12:12:52+05:00 — Implement action journal for library operations
+- `c71288a` 2026-11-16T12:10:45+05:00 — Add backend test suite with concurrency coverage
+- `c265dc2` 2026-11-16T12:00:25+05:00 — Implement library API views for catalog issues and queue
+- `474b07b` 2026-11-16T11:52:23+05:00 — Implement library serializers for catalog, issues and reservations
+- `e41a66b` 2026-11-16T11:51:08+05:00 — Add JWT token endpoints and admin registration
+- `3bdf244` 2026-11-16T11:50:21+05:00 — Implement reader user model with roles and permissions
+- `9238407` 2026-11-16T11:48:15+05:00 — Configure Django settings for MySQL and JWT authentication
+- `727622e` 2026-11-09T17:58:31+05:00 — Implement Django models and add remaining design docs
+- `32a3999` 2026-11-09T16:08:18+05:00 — Add database design documentation for library system
+- `0401cf1` 2026-11-09T16:08:11+05:00 — Add business logic documentation for library system
+- `b5876b3` 2026-11-09T16:01:40+05:00 — Initial project structure for library management system

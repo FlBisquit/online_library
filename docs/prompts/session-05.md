@@ -9,7 +9,6 @@
 - `513b785 Add scoped rate limit for token endpoint`
 - `12896f7 Add access token lifetime test`
 - `c2e6d74 Update AI log with access token lifetime test stage`
-- `eece12e Update AI log with settings hardening stage`
 
 ## Результат
 
