@@ -19,6 +19,13 @@ LOAN_PERIOD = constants.LOAN_PERIOD
 RESERVATION_PERIOD = constants.RESERVATION_PERIOD
 
 
+def _ensure_password(user, password: str) -> None:
+    """Persist a demo password without rewriting an unchanged hash."""
+    if not user.check_password(password):
+        user.set_password(password)
+        user.save(update_fields=["password"])
+
+
 def _demo_isbn(index: int) -> str:
     """Смоделированный ISBN-13 для демо-книги."""
     digits = f"978{5}{10000000 + index:08d}"
@@ -387,7 +394,7 @@ class Command(BaseCommand):
                 "status": models.Reader.Status.ACTIVE,
             },
         )[0]
-        admin.set_password(ADMIN_PASSWORD)
+        _ensure_password(admin, ADMIN_PASSWORD)
         admin.groups.add(admin_group)
 
         librarian = models.Reader.objects.update_or_create(
@@ -397,7 +404,7 @@ class Command(BaseCommand):
                 "status": models.Reader.Status.ACTIVE,
             },
         )[0]
-        librarian.set_password(LIBRARIAN_PASSWORD)
+        _ensure_password(librarian, LIBRARIAN_PASSWORD)
         librarian.groups.add(librarian_group)
 
         readers = []
@@ -413,7 +420,7 @@ class Command(BaseCommand):
                     ),
                 },
             )
-            reader.set_password(READER_PASSWORD)
+            _ensure_password(reader, READER_PASSWORD)
             reader.groups.add(reader_group)
             readers.append(reader)
 

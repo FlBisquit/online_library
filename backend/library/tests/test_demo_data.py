@@ -163,3 +163,18 @@ class LoadDemoDataTests(TransactionTestCase):
         self.assertIsNotNone(expired)
         self.assertNotEqual(expired.expires_at, None)
         self.assertLess(expired.expires_at, timezone.now())
+
+    def test_demo_users_have_readme_passwords(self):
+        from django.core.management import call_command
+
+        call_command("load_demo_data")
+        expected = {
+            "admin@library.local": "AdminPass123",
+            "librarian@library.local": "LibrarianPass123",
+            "reader0@library.local": "ReaderPass123",
+            "reader7@library.local": "ReaderPass123",
+        }
+        for email, password in expected.items():
+            with self.subTest(email=email):
+                user = models.Reader.objects.get(email=email)
+                self.assertTrue(user.check_password(password))
