@@ -612,6 +612,26 @@ class UserManagementTests(LibraryTestCase):
         )
 
 
+class LibrarianReaderSearchTests(LibraryTestCase):
+    """Библиотекарь ищет читателей для формы выдачи книги."""
+
+    def test_librarian_can_search_readers_by_email_and_name(self):
+        self.client.force_authenticate(self.librarian)
+
+        by_email = self.client.get("/api/readers/search/", {"search": "reader2@test.local"})
+        self.assertEqual(by_email.status_code, 200)
+        self.assertEqual([row["id"] for row in by_email.data["results"]], [self.other_reader.id])
+        self.assertEqual(by_email.data["results"][0]["full_name"], self.other_reader.full_name)
+
+        by_name = self.client.get("/api/readers/search/", {"search": "Читалов"})
+        self.assertEqual(by_name.status_code, 200)
+        self.assertEqual([row["id"] for row in by_name.data["results"]], [self.reader.id])
+
+    def test_plain_reader_cannot_search_readers(self):
+        self.client.force_authenticate(self.reader)
+        self.assertEqual(self.client.get("/api/readers/search/").status_code, 403)
+
+
 class ReaderTests(LibraryTestCase):
     def test_register_reader_success_assigns_reader_group(self):
         response = self.client.post(

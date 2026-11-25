@@ -34,6 +34,7 @@ urlpatterns = [
     ),
     path("users/", views.UserListCreateView.as_view(), name="user-list"),
     path("users/<int:pk>/", views.UserDetailView.as_view(), name="user-detail"),
+    path("readers/search/", views.ReaderSearchListView.as_view(), name="reader-search"),
     path("readers/<int:pk>/", views.ReaderDetailView.as_view(), name="reader-detail"),
     path("readers/<int:pk>/issues/", views.ReaderIssuesView.as_view(), name="reader-issues"),
     path("issues/", views.IssueListView.as_view(), name="issue-list"),

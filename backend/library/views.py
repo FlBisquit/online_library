@@ -296,6 +296,23 @@ class RegisterView(generics.CreateAPIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
+class ReaderSearchListView(generics.ListAPIView):
+    """Поиск читателей по email или ФИО для формы выдачи книги."""
+
+    serializer_class = UserSerializer
+    permission_classes = [IsLibrarianOrAdmin]
+    pagination_class = CatalogPagination
+
+    def get_queryset(self):
+        queryset = models.Reader.objects.all()
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(
+                models.Q(email__icontains=search) | models.Q(full_name__icontains=search)
+            )
+        return queryset.order_by("id")
+
+
 class ReaderDetailView(generics.RetrieveAPIView):
     """Получение данных читателя (сам или библиотекарь/администратор)."""
 
