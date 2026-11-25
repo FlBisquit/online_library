@@ -1,8 +1,12 @@
 # Aider configuration for the library project.
 
-model: gpt-4o
-autocommit: false
+model: gemini/gemini-2.5-flash
+gitignore: false
+chat-history-file: docs/prompts/aider.chat.history.md
+input-history-file: docs/prompts/aider.input.history
+auto-commits: false
 yes: false
+read: CONVENTIONS.md
 
 # Project context: backend (Django) and frontend (React).
 map:
