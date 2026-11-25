@@ -112,16 +112,25 @@ cd backend
 python manage.py load_demo_data
 ```
 
-Загружает демо-набор: 24 книги, 48 экземпляров, 48 выдач, 8 читателей и 1 бронь.
+Команда идемпотентна: повторный запуск обновляет существующие записи, не создавая
+дубликаты. `--reset` в одной транзакции очищает данные приложения и загружает
+демо-набор заново.
+
+Демо-набор: 10 авторов, 8 жанров, 24 книги с обложками (`cover_url`), 33 экземпляра,
+33 выдачи (включая `RETURNED`, `ISSUED`, `OVERDUE` и `LOST`) и 6 броней. Даты выдач
+распределены по последним 60 дням. Есть книга с тремя читателями в очереди, книга
+с активной бронью и экземпляром `RESERVED`, а также отменённая и истёкшая брони
+за последний месяц. Один из читателей заблокирован (`reader7@library.local`).
 
 ## Test accounts
 
-| Role          | Email                    | Password         |
-|---------------|--------------------------|------------------|
-| Администратор | admin@library.local      | AdminPass123    |
-| Библиотекарь | librarian@library.local  | LibrarianPass123 |
-| Читатель      | reader0@library.local    | ReaderPass123   |
-| ...           | reader1..7@library.local | ReaderPass123   |
+| Role               | Email                    | Password         |
+|--------------------|--------------------------|------------------|
+| Администратор      | admin@library.local      | AdminPass123     |
+| Библиотекарь       | librarian@library.local  | LibrarianPass123 |
+| Читатель           | reader0@library.local    | ReaderPass123    |
+| ...                | reader1..6@library.local | ReaderPass123    |
+| Читатель (BLOCKED) | reader7@library.local    | ReaderPass123    |
 
 ## Manual scenario
 
