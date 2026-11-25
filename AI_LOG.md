@@ -546,3 +546,37 @@ AI Driven Development и приступить к доведению проект
 Аудит закрыт: известные проблемы устранены, документация соответствует
 реализации, рабочее дерево чистое кроме изначально незаверсионированного
 `proj.zip`.
+
+## 2026-11-25 — Кабинет читателя и панель библиотекаря
+
+### Задача
+
+- Вывести «Мои выдачи» и «Панель библиотекаря» из состояния id-only.
+- Добавить backend-контракт для текущих выдач, броней, очередей и отчётов.
+- Реализовать frontend-экраны с loading / empty / error, i18n и ручным сценарием.
+
+### Что сделано
+
+- `IssueSerializer`: вложенные read-only `book {id, title}`, `reader {id, full_name}`,
+  `copy {inventory_number}`.
+- `ReservationSerializer`: вложенные `book`, `reader`, `copy`, `position`, `total`,
+  `expires_at`.
+- `GET /api/auth/me/reservations/` — брони и очереди текущего читателя.
+- `GET /api/issues/?due=today|overdue&search=...` — выдачи сотрудника.
+- `GET /api/reservations/?status=ACTIVE` — ожидания выдачи.
+- `MyLoansPage`: «Сейчас на руках», «Мои очереди и брони», «История» с пагинацией.
+- `LibrarianPage`: форма выдачи, списки ожиданий/выдач, действия возврата и потери.
+- `frontend/src/i18n.js`: даты через `Intl.DateTimeFormat("ru-RU")` и русские статусы.
+- `README.md`: ручной сценарий.
+
+### Финальные проверки
+
+- `python manage.py check` — OK.
+- `python manage.py makemigrations --check --dry-run` — изменений нет.
+- `python manage.py test` — OK (203 теста, MySQL).
+- `npx vite build` — OK (frontend изменён).
+
+### Итоговый статус
+
+Кабинет читателя и панель библиотекаря переведены на человекочитаемые данные,
+фильтры и действия библиотекаря реализованы, ручной сценарий задокументирован.
