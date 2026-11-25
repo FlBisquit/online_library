@@ -34,3 +34,5 @@
 - Роль назначается при создании пользователя: `Group.objects.get_or_create`
   в `perform_create`, а не `Group.objects.get`, чтобы регистрация работала
   на чистой БД без демо-данных.
+- `BASE_DIR` в `backend/config/settings.py` — папка `backend`
+  (`Path(__file__).resolve().parent.parent`); `.env` читается только оттуда.
