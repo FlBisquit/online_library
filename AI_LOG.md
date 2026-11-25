@@ -658,3 +658,58 @@ AI Driven Development и приступить к доведению проект
 
 Кабинет читателя и панель библиотекаря соответствуют требованиям; найденный разрыв
 в поиске читателей закрыт, сценарий проверен и описан в README.
+
+## 2026-11-26 — Перестройка тестов и скрипт защиты от гонки выдачи
+
+### Задача
+
+- Заменить `backend/library/tests.py` пакетом `backend/library/tests/` без
+  повторного выполнения одних и тех же тестов в подклассах.
+- Довести число уникальных тестов минимум до 35 и покрыть матрицу ролей, чужие
+  выдачи/брони/очередь/историю, статусные переходы, отчёты с периодом, CSV,
+  журнал и конкурентность на 10 потоках.
+- Добавить standalone-скрипт проверки защиты от двойной выдачи и ускорить прогон.
+
+### Что сделано
+
+- `LibraryFixtureMixin` содержит только фикстуры; базовые классы
+  `LibraryTestCase` / `LibraryTransactionTestCase` вынесены в `base.py`.
+- Модули: `test_auth.py`, `test_permissions.py`, `test_catalog.py`,
+  `test_issues.py`, `test_queue.py`, `test_transitions.py`, `test_reports.py`,
+  `test_audit_log.py`, `test_concurrency.py`, `test_demo_data.py`.
+- Добавлены: матрица ролей и эндпоинтов, запрет чужих выдач/брони/позиции/истории,
+  все статусные переходы, очередь → возврат → RESERVED первому → 409 второму
+  и 201 первому, истечение брони, отчёты по периодам и CSV, журнал действий.
+- `test_concurrency.py`: `TransactionTestCase`, 10 потоков, отдельный `APIClient`
+  на поток, `threading.Barrier`; проверены 1x201/9x409/1 строка Issue,
+  10 вступлений в очередь и совместные возврат + вступление без 500/зависания.
+- `config.settings_test.py` с `MD5PasswordHasher`; `manage.py test` выбирает его
+  автоматически. Полный прогон ускорился с ~3,7 мин до ~10 с.
+- Red/green для одного бага: `fe4e1eb Add failing test for malformed issue ids`
+  (тест падал с `ValueError` → 500), затем `da30d70 Validate issue ids before issuing`
+  (некорректные `reader_id`/`copy_id` дают 400).
+- Найден и исправлен ещё один баг: `load_demo_data` вызывал `set_password()`,
+  но не сохранял пользователей; логины из README не работали. Тест
+  `test_demo_users_have_readme_passwords` и `_ensure_password()` в
+  `ac53225 Persist demo login passwords`.
+- `scripts/concurrent_booking.py` (stdlib `urllib`, без внешних зависимостей):
+  логин библиотекаря, поиск/создание 10 читателей, свободный экземпляр без истории
+  выдач (или новая книга/экземпляр), 10 параллельных `POST /api/issues/`,
+  печать кодов и числа Issue, возврат 0 только для `1x201, 9x409, 1 запись`.
+  Запуск описан в `README.md`.
+
+### Финальные проверки
+
+- `python manage.py test --noinput -v 1` — OK, 113 тестов за ~10,9 с (MySQL).
+- `grep -Rh "    def test_" library/tests/*.py | wc -l` — 113; число совпадает
+  с выводом раннера; в `base.py` нет методов `test_*`.
+- `python manage.py check` — OK; `makemigrations --check --dry-run` — изменений нет.
+- Script check на запущенном сервере с MySQL (`test_library`): два прогона дали
+  `201: 1, 409: 9`, `Issue rows for this copy: 1`, код возврата 0. Попытка на SQLite
+  показала `database is locked` и 500, поэтому README рекомендует MySQL/MariaDB.
+- Неотслеживаемый `proj.zip` не изменён.
+
+### Итоговый статус
+
+Тесты уникальны, быстры и покрывают требуемые сценарии; защита от гонки выдачи
+проверена как в тестах, так и отдельным скриптом через реальный HTTP API.

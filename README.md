@@ -22,6 +22,7 @@ fin_proj/
 │   ├── .env.example
 │   ├── config/       # Django project configuration
 │   │   ├── settings.py
+│   │   ├── settings_test.py
 │   │   ├── urls.py
 │   │   ├── wsgi.py
 │   │   └── asgi.py
@@ -38,7 +39,7 @@ fin_proj/
 │       ├── constants.py
 │       ├── migrations/
 │       ├── management/commands/load_demo_data.py
-│       └── tests.py
+│       └── tests/    # focused test modules (fixtures in base.py)
 ├── frontend/         # React frontend
 │   ├── index.html
 │   ├── package.json
@@ -58,6 +59,8 @@ fin_proj/
 │           ├── MyLoansPage.jsx
 │           ├── LibrarianPage.jsx
 │           └── AdminPage.jsx
+├── scripts/          # standalone protection checks
+│   └── concurrent_booking.py
 ├── docs/
 └── AI_LOG.md
 ```
@@ -103,7 +106,39 @@ cd backend
 python manage.py test
 ```
 
+`manage.py test` автоматически включает `config.settings_test` с быстрым
+`MD5PasswordHasher`; обычные команды (`runserver`, `migrate`, `load_demo_data`)
+по-прежнему используют `config.settings`. Тесты разложены по модулям
+`backend/library/tests/`; общие фикстуры живут в `base.py` и не содержат
+тестовых методов. Прогон: 113 уникальных тестов примерно за 10 секунд.
+
 Frontend: сборка проверяется командой `npm run build`.
+
+### Concurrency protection check
+
+Скрипт `scripts/concurrent_booking.py` отправляет 10 одновременных запросов
+на выдачу одного экземпляра и проверяет, что гонка закрыта. Запускать его нужно
+против запущенного бэкенда с MySQL/MariaDB (SQLite не поддерживает
+`SELECT FOR UPDATE` и не подходит для проверки блокировок):
+
+```bash
+# Терминал 1
+cd backend
+python manage.py runserver 127.0.0.1:8000
+
+# Терминал 2 (из корня проекта)
+python3 scripts/concurrent_booking.py \
+  --base-url http://127.0.0.1:8000 \
+  --email librarian@library.local \
+  --password LibrarianPass123
+```
+
+Флаги `--email` и `--password` — логин библиотекаря. `--base-url` может быть
+как корнем сервера, так и адресом `/api`. Скрипт при необходимости создаёт
+10 активных читателей, выбирает свободный экземпляр без истории выдач (или
+создаёт новую книгу и экземпляр), печатает коды ответов и число записей `Issue`
+для этого экземпляра. Код возврата `0` выставляется только для результата
+`1x201, 9x409, 1 запись`; любое другое сочетание даёт ненулевой код.
 
 ## Demo data
 
