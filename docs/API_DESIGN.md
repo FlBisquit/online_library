@@ -4,7 +4,9 @@
 
 - Base URL: `/api/`.
 - Формат данных: JSON, Django REST Framework.
-- Пагинация: `page` / `limit` (DRF pagination, `limit` до 100).
+- Пагинация: списки каталога, пользователей и бронирований используют
+  `CatalogPagination` (`page` / `limit`, `limit` до 100, по умолчанию 20);
+  остальные списки — стандартный `PageNumberPagination` (`page`, `PAGE_SIZE=20`).
 - Идентификаторы: целые числа (BigAutoField).
 - Конфликты бизнес-логики (невозможная выдача, удаление книги с выдачами,
   понижение себя или последнего администратора) возвращают `409 Conflict`.
@@ -17,7 +19,10 @@
 - Личные данные (`auth/me`, история выдач) — `IsAuthenticated`.
 - Журнал действий и отчёты — `IsLibrarianOrAdmin`.
 
-Идентификация пользователя всегда берётся из `request.user`, а не из тела запроса.
+Текущий пользователь всегда берётся из JWT (`request.user`). В двух сценариях
+сотрудник явно передаёт `reader_id` в теле/пути: выдача книги
+(`POST /api/issues/`) и вступление в очередь (`POST /api/books/{book_id}/queue/`);
+там проверяется право сотрудника либо совпадение `reader_id` с `request.user.id`.
 
 ## 3. Endpoints
 
@@ -26,6 +31,7 @@
 #### GET /api/books/
 - **Назначение:** список книг (поиск, фильтры, пагинация).
 - **Параметры:** `search`, `author`, `genre`, `publication_year`, `page`, `limit`.
+- Нецелочисленные `author`/`genre`/`publication_year` дают `400`.
 - **Ответ:** `200 OK` — `{"count": <int>, "results": [<book>]}`.
 - **Авторизация:** `AllowAny`.
 
@@ -55,7 +61,7 @@
 
 #### POST /api/books/{book_id}/copies/
 - **Тело:** `{"inventory_number": "...", "status": "AVAILABLE"}`.
-- **Ответ:** `201 Created`; ошибки `400`, `404`, `409`.
+- **Ответ:** `201 Created`; ошибки `400`, `404` (нет такой книги), `409`.
 - **Авторизация:** `IsCatalogEditor`.
 
 #### GET /api/copies/{id}/
@@ -66,7 +72,8 @@
 - **Тело:** `{"inventory_number": "...", "status": "LOST"}`.
 - Статус меняется только по карте переходов; `ISSUED` и `RESERVED` выставляются
   сервисами выдачи/бронирования. Ручной возврат `ISSUED`/`RESERVED` в
-  `AVAILABLE` тоже запрещён (`409`).
+  `AVAILABLE` тоже запрещён (`409`). Перевод в `RETIRED` даёт `409`, если по
+  экземпляру есть незакрытая выдача или живая бронь (`PENDING`/`ACTIVE`).
 - **Ответ:** `200 OK`; ошибки `400`, `403`, `404`, `409`.
 - **Авторизация:** `IsCatalogEditor`.
 
@@ -95,6 +102,10 @@
 - **Ответ:** данные текущего пользователя и его роли.
 - **Авторизация:** `IsAuthenticated`.
 
+#### GET /api/auth/me/reservations/
+- **Ответ:** активные брони и позиции текущего читателя (`200 OK`, список).
+- **Авторизация:** `IsAuthenticated`.
+
 #### GET /api/users/
 - **Параметры:** `search` (email или ФИО), `role`, `status`, `page`, `limit`.
 - **Авторизация:** `IsAdmin`.
@@ -115,26 +126,46 @@
 - Каждое изменение пишется в `ActionLog`.
 - **Авторизация:** `IsAdmin`.
 
+#### PUT /api/users/{id}/
+- Полная замена: обязательны оба поля `role` и `status`; неполный payload даёт `400`.
+- Остальные ограничения и аудит — как у `PATCH`.
+- **Авторизация:** `IsAdmin`.
+
 #### GET /api/readers/{id}/ и GET /api/readers/{id}/issues/
-- Данные читателя и история его выдач.
-- **Авторизация:** `IsAuthenticated`.
+- Данные читателя и история его выдач; отсутствующий `id` — `404`, чужой
+  объект для читателя — `403`.
+- **Авторизация:** сам пользователь или сотрудник (`IsAuthenticated` + объектная проверка).
 - Списочный маршрут `GET /api/readers/` удалён; используется `/api/users/`.
 
 ### 3.5. Выдача, возврат и история
 
-- `POST /api/issues/` — выдача экземпляра; `GET /api/issues/` — список выдач.
+- `POST /api/issues/` — выдача экземпляра; `GET /api/issues/` — список выдач
+  (фильтры `status`, `reader_id`, `due=today|overdue`, `search`).
 - `POST /api/issues/{id}/return/` — возврат.
 - `POST /api/issues/{id}/mark-lost/` — отметить выдачу утерянной.
 - `GET /api/readers/{id}/issues/` — история выдач читателя.
-- **Авторизация:** `IsAuthenticated` (изменения выдач — `IsLibrarianOrAdmin`).
+- Возврат доступен только сотрудникам; в кабинете читателя кнопка возврата скрыта.
+- `reader_id`/`copy_id` при выдаче должны быть целыми числами (`400` иначе);
+  экземпляр с активной бронью выдаётся только её владельцу.
+- `issued_at` и `due_at` (`+14 дней`) берутся из одной метки времени.
+- **Авторизация:** список и изменения — `IsLibrarianOrAdmin`; история — сам
+  пользователь или сотрудник.
 
 ### 3.6. Очередь и бронирования
 
-- `GET /api/books/{book_id}/queue/` — очередь на книгу.
-- `POST /api/books/{book_id}/queue/` — добавить читателя в очередь.
-- `GET /api/books/{book_id}/queue/{reader_id}/position/` — позиция в очереди.
-- `GET /api/reservations/{id}/` — состояние брони.
-- `POST /api/reservations/{id}/cancel/` — отмена брони.
+- `GET /api/books/{book_id}/queue/` — очередь на книгу: сотрудники видят всех
+  (`results` с позициями), читатель — только свою позицию и `total`.
+- `POST /api/books/{book_id}/queue/` — добавить читателя в очередь
+  (`reader_id` из тела; сотрудник — любой, читатель — только себя);
+  нецелочисленный `reader_id` даёт `400`, неизвестный — `404`.
+- `GET /api/books/{book_id}/queue/{reader_id}/position/` — позиция в очереди
+  (только себя или сотрудникам).
+- `GET /api/auth/me/reservations/` — свои активные брони.
+- `GET /api/reservations/` — список броней сотрудников с фильтром `status`.
+- `GET /api/reservations/{id}/` — состояние брони (владелец или сотрудники).
+- `POST /api/reservations/{id}/cancel/` — отмена брони (владелец или сотрудники).
+- Просроченные `ACTIVE`-брони истекают лениво при обращении к каталогу/очереди;
+  экземпляр после этого передаётся следующему `PENDING`-бронированию.
 
 ### 3.7. Журнал и отчёты
 
@@ -142,7 +173,10 @@
 - `GET /api/reports/books/?date_from=ГГГГ-ММ-ДД&date_to=ГГГГ-ММ-ДД` —
   aggregated-отчёт по выдачам, просрочкам и отменам.
 - `GET /api/reports/books/export/` — тот же отчёт CSV (`utf-8-sig`).
-- Обе даты обязательны; неверный период — `400`.
+- Обе даты обязательны; неверный или перевёрнутый период, а также
+  `date_to=9999-12-31` — `400`.
+- Значения ячеек, начинающиеся с `= + - @` (включая ведущие пробелы, табуляцию,
+  CR/LF), экранируются апострофом.
 - **Авторизация:** `IsLibrarianOrAdmin`.
 
 ## 4. Полная таблица API endpoints
@@ -154,6 +188,7 @@
 | POST | /api/token/blacklist/ | Auth | Отзыв refresh | AllowAny |
 | POST | /api/auth/register/ | Пользователи | Регистрация читателя | AllowAny |
 | GET | /api/auth/me/ | Пользователи | Текущий пользователь | IsAuthenticated |
+| GET | /api/auth/me/reservations/ | Бронирования | Свои активные брони | IsAuthenticated |
 | GET, POST | /api/books/ | Каталог | Список / создание книги | AllowAny / IsCatalogEditor |
 | GET, PATCH, PUT, DELETE | /api/books/{id}/ | Каталог | Книга | AllowAny / IsCatalogEditor |
 | GET, POST | /api/books/{book_id}/copies/ | Экземпляры | Список / создание | AllowAny / IsCatalogEditor |
@@ -163,16 +198,17 @@
 | GET, POST | /api/genres/ | Справочники | Жанры | AllowAny / IsCatalogEditor |
 | GET, PATCH, PUT, DELETE | /api/genres/{id}/ | Справочники | Жанр | AllowAny / IsCatalogEditor |
 | GET, POST | /api/users/ | Пользователи | Список / создание сотрудника | IsAdmin |
-| GET, PATCH | /api/users/{id}/ | Пользователи | Роль и статус | IsAdmin |
-| GET | /api/readers/{id}/ | Читатели | Данные читателя | IsAuthenticated |
-| GET | /api/readers/{id}/issues/ | История | Выдачи читателя | IsAuthenticated |
-| GET, POST | /api/issues/ | Выдача | Список / выдача | IsAuthenticated / IsLibrarianOrAdmin |
+| GET, PATCH, PUT | /api/users/{id}/ | Пользователи | Роль и статус | IsAdmin |
+| GET | /api/readers/{id}/ | Читатели | Данные читателя | self / staff |
+| GET | /api/readers/{id}/issues/ | История | Выдачи читателя | self / staff |
+| GET, POST | /api/issues/ | Выдача | Список / выдача | IsLibrarianOrAdmin |
 | POST | /api/issues/{id}/return/ | Возврат | Возврат книги | IsLibrarianOrAdmin |
 | POST | /api/issues/{id}/mark-lost/ | Выдача | Книга утеряна | IsLibrarianOrAdmin |
 | GET, POST | /api/books/{book_id}/queue/ | Очередь | Очередь на книгу | IsAuthenticated |
 | GET | /api/books/{book_id}/queue/{reader_id}/position/ | Очередь | Позиция | IsAuthenticated |
-| GET | /api/reservations/{id}/ | Бронирование | Состояние брони | IsAuthenticated |
-| POST | /api/reservations/{id}/cancel/ | Отмена | Отмена брони | IsAuthenticated |
+| GET | /api/reservations/ | Бронирования | Список с фильтром `status` | IsLibrarianOrAdmin |
+| GET | /api/reservations/{id}/ | Бронирование | Состояние брони | owner / staff |
+| POST | /api/reservations/{id}/cancel/ | Отмена | Отмена брони | owner / staff |
 | GET | /api/action-log/ | Журнал | Журнал действий | IsLibrarianOrAdmin |
 | GET | /api/reports/books/ | Отчёт | Отчёт по книгам | IsLibrarianOrAdmin |
 | GET | /api/reports/books/export/ | Отчёт | CSV-выгрузка | IsLibrarianOrAdmin |
@@ -185,3 +221,12 @@
 - Удаление книги/экземпляра защищено проверкой выдач и живых бронирований.
 - Очередь ожидания реализуется через сущность `reservations`
   (см. `docs/DATABASE_DESIGN.md` и `docs/BOOK_QUEUE_DESIGN.md`).
+- Активная бронь привязана к конкретному экземпляру (`copy_id`): выдача
+  зарезервированного экземпляра другому читателю и выдача любого свободного
+  экземпляра читателю с активной бронью запрещены (`409`).
+- Невалидные целочисленные параметры и ID дают `400`, отсутствующие объекты —
+  `404`; `IntegrityError → 409` применяется только к нарушениям уникальности.
+- `/api/token/` ограничен scope `token` (10/min); остальные auth-эндпоинты
+  пока используют общие `anon`/`user`.
+- Фактическое поведение проверено 136 тестами (последний прогон — `OK`);
+  расхождения между документами отслеживаются в `docs/AI_REVIEW.md`.

@@ -73,18 +73,22 @@
   `GET /api/auth/me/`, `GET /api/auth/me/reservations/`.
 - **Каталог:** `GET/POST /api/books/`, `GET/PATCH/PUT/DELETE /api/books/<id>/`,
   `GET/POST /api/books/<book_id>/copies/`,
-  `GET/PATCH/DELETE /api/copies/<id>/`, CRUD `/api/authors/`,
+  `GET/PATCH/PUT/DELETE /api/copies/<id>/`, CRUD `/api/authors/`,
   `/api/authors/<id>/`, `/api/genres/`, `/api/genres/<id>/`. Чтение публичное,
-  запись — `IsCatalogEditor`.
+  запись — `IsCatalogEditor`; списание в `RETIRED` запрещено при открытой выдаче
+  или живой брони.
 - **Очередь:** `GET/POST /api/books/<book_id>/queue/`,
   `GET /api/books/<book_id>/queue/<reader_id>/position/`.
-- **Пользователи:** `GET/POST /api/users/`, `GET/PATCH /api/users/<id>/`
-  (только администратор); `GET /api/readers/<id>/`,
-  `GET /api/readers/<id>/issues/`, `GET /api/readers/search/` (сотрудники).
+- **Пользователи:** `GET/POST /api/users/`, `GET/PATCH/PUT /api/users/<id>/`
+  (только администратор; PUT требует полного набора `role` и `status`);
+  `GET /api/readers/<id>/`, `GET /api/readers/<id>/issues/` (сам пользователь
+  или сотрудники), `GET /api/readers/search/` (сотрудники).
 - **Выдачи:** `GET/POST /api/issues/` (список — только сотрудники),
   `POST /api/issues/<id>/return/`, `POST /api/issues/<id>/mark-lost/`.
-- **Бронирования:** `GET /api/reservations/` (с фильтром `status`),
-  `GET /api/reservations/<id>/`, `POST /api/reservations/<id>/cancel/`.
+- **Бронирования:** `GET /api/reservations/` (только сотрудники, фильтр
+  `status`), `GET /api/auth/me/reservations/` (свои брони),
+  `GET /api/reservations/<id>/`, `POST /api/reservations/<id>/cancel/`
+  (владелец или сотрудники).
 - **Журнал:** `GET /api/action-log/` — только сотрудники, фильтры и пагинация.
 - **Отчёты:** `GET /api/reports/books/`, `GET /api/reports/books/export/`
   (CSV в UTF-8 с BOM) — только сотрудники.
@@ -96,12 +100,17 @@
 ## 7. Фактическое состояние и расхождения
 
 - Реализовано: модели, миграции, перечисленные эндпоинты, React-экраны,
-  демо-загрузка, 113 уникальных тестов, скрипт проверки гонки выдачи.
+  демо-загрузка, 136 уникальных тестов, скрипт проверки гонки выдачи.
 - Журнал действий изначально был ошибочно отмечен выполненным в плане; API и
   экран добавлены 2026-11-23 (`docs/AI_LOG.md`, запись 10).
+- Исправления сессии 20 (реальные коммиты): `c4c365e` — покрытие всех коммитов
+  в логах; `cfca710` — 23 красных регрессионных теста; `2dfb338` — брони,
+  списание и продвижение очереди; `09f0b18` — валидация, throttle, CSV, отчёты
+  и демо-данные; `8610ca6` — фронтенд. Все 136 тестов зелёные.
 - Открытые вопросы безопасности (не отмечены как реализованные):
   слабый плейсхолдер `SECRET_KEY` в `.env.example`, `DEBUG=True` в локальном
-  `.env`, неработающий `throttle_classes`, 500 на невалидных ID, неполное
-  экранирование CSV. Подробности и коммиты — `docs/AI_REVIEW.md`, `docs/PLAN.md`.
+  `.env`, отдельные throttle scope для refresh/blacklist/register, `::1` вместо
+  `[::1]`, TLS/HSTS и политика показа `total` в очередях. Подробности —
+  `docs/AI_REVIEW.md`, `docs/PLAN.md`.
 - Текущая спецификация не фиксирует нереализованные функции как сделанные;
   статус каждого пункта сверяется с планом и журналом AI-агента.
