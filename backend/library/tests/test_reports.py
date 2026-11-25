@@ -114,6 +114,7 @@ class ReportsTests(LibraryTestCase):
             {"date_from": "2026-11-01", "date_to": "2026-99-99"},
             {"date_from": "2026-11-30", "date_to": "2026-11-01"},
             {"date_to": "2026-11-30"},
+            {"date_from": "9999-12-30", "date_to": "9999-12-31"},
         ]:
             with self.subTest(params=params):
                 response = self.client.get("/api/reports/books/", params)
@@ -168,10 +169,30 @@ class ReportsTests(LibraryTestCase):
                 self.assertIn(f"'{dangerous}", titles)
                 self.assertNotIn(dangerous, [row[1] for row in rows[1:]])
 
+    def test_csv_escapes_formulas_hidden_by_leading_whitespace(self):
+        dangerous_titles = ["\t=CMD", "\r@CMD", "\n+CMD", "  -CMD"]
+        for index, title in enumerate(dangerous_titles):
+            models.Book.objects.create(title=title, isbn=f"978-5-901-000-00-{index}")
+        self.client.force_authenticate(self.librarian)
+        response = self.client.get("/api/reports/books/export/", self.period)
+        rows = self._parse_csv(response)
+        titles = {row[1] for row in rows[1:]}
+        for title in dangerous_titles:
+            with self.subTest(title=repr(title)):
+                self.assertIn(f"'{title}", titles)
+
     def test_export_reader_is_forbidden(self):
         self.client.force_authenticate(self.reader)
         response = self.client.get("/api/reports/books/export/", self.period)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_export_max_date_returns_400(self):
+        self.client.force_authenticate(self.librarian)
+        response = self.client.get(
+            "/api/reports/books/export/",
+            {"date_from": "9999-12-30", "date_to": "9999-12-31"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_export_invalid_dates_return_400(self):
         self.client.force_authenticate(self.librarian)

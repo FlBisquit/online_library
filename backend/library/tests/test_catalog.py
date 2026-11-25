@@ -290,3 +290,66 @@ class CatalogManagementTests(LibraryTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 4)
         self.assertEqual(len(response.data["results"]), 2)
+
+    def test_retire_rejected_while_issue_is_open(self):
+        self.copy.status = models.BookCopy.Status.ISSUED
+        self.copy.save(update_fields=["status"])
+        issue = models.Issue.objects.create(
+            reader=self.reader,
+            copy=self.copy,
+            issued_at=timezone.now(),
+            due_at=timezone.now() + timedelta(days=14),
+            status=models.Issue.Status.ISSUED,
+        )
+        self.client.force_authenticate(self.librarian)
+        response = self.client.patch(
+            f"/api/copies/{self.copy.id}/", {"status": "RETIRED"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.copy.refresh_from_db()
+        issue.refresh_from_db()
+        self.assertEqual(self.copy.status, models.BookCopy.Status.ISSUED)
+        self.assertEqual(issue.status, models.Issue.Status.ISSUED)
+
+    def test_retire_rejected_while_reservation_is_live(self):
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        reservation = models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            copy=self.copy,
+            status=models.Reservation.Status.ACTIVE,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() + timedelta(hours=48),
+            active_slot=1,
+        )
+        self.client.force_authenticate(self.librarian)
+        response = self.client.patch(
+            f"/api/copies/{self.copy.id}/", {"status": "RETIRED"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.copy.refresh_from_db()
+        reservation.refresh_from_db()
+        self.assertEqual(self.copy.status, models.BookCopy.Status.RESERVED)
+        self.assertEqual(reservation.status, models.Reservation.Status.ACTIVE)
+
+
+class CatalogValidationTests(LibraryTestCase):
+    """Мусор в query-параметрах и отсутствующий book_id -> 400/404, не 500."""
+
+    def test_book_filters_validate_integer_params(self):
+        for params in (
+            {"author": "abc"},
+            {"genre": "abc"},
+            {"publication_year": "abc"},
+        ):
+            with self.subTest(params=params):
+                response = self.client.get("/api/books/", params)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_copy_for_missing_book_returns_404(self):
+        self.client.force_authenticate(self.librarian)
+        response = self.client.post(
+            "/api/books/999999/copies/", {"inventory_number": "INV-MISSING"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

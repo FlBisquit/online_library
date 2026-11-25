@@ -85,6 +85,17 @@ class LoadDemoDataTests(TransactionTestCase):
         }
         self.assertEqual(before, after)
 
+    def test_rerun_preserves_copy_statuses(self):
+        self._load_demo_data()
+        before = {
+            copy.inventory_number: copy.status for copy in models.BookCopy.objects.all()
+        }
+        self._load_demo_data()
+        after = {
+            copy.inventory_number: copy.status for copy in models.BookCopy.objects.all()
+        }
+        self.assertEqual(before, after)
+
     # ---------- Инварианты консистентности ----------
 
     def test_demo_data_issued_copies_match_open_issues(self):

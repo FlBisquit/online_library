@@ -243,13 +243,25 @@ class QueueBehaviorTests(LibraryTestCase):
         detail = self.client.get(f"/api/reservations/{reservation.id}/")
         self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_integrity_error_handler_returns_409(self):
+    def test_duplicate_integrity_error_returns_409(self):
         from django.db import IntegrityError
 
         from config.exceptions import api_exception_handler
 
-        response = api_exception_handler(IntegrityError("duplicate"), {})
+        response = api_exception_handler(
+            IntegrityError("(1062, 'Duplicate entry 'x' for key 'email'')"), {}
+        )
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_other_integrity_error_is_not_reported_as_conflict(self):
+        from django.db import IntegrityError
+
+        from config.exceptions import api_exception_handler
+
+        response = api_exception_handler(
+            IntegrityError("CHECK constraint failed: check_issue_due_at_after_issued_at"), {}
+        )
+        self.assertIsNone(response)
 
     def test_reader_cannot_query_other_reader_queue_position(self):
         self._make_copy_unavailable()
@@ -265,3 +277,41 @@ class QueueBehaviorTests(LibraryTestCase):
         self.client.force_authenticate(self.reader)
         response = self.client.get(f"/api/reservations/{reservation.id}/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class QueueValidationTests(LibraryTestCase):
+    """Невалидные ID и недоступные экземпляры не ломают очередь."""
+
+    def _make_copy_unavailable(self):
+        self.copy.status = models.BookCopy.Status.ISSUED
+        self.copy.save(update_fields=["status"])
+
+    def test_queue_join_rejects_non_integer_reader_id(self):
+        self._make_copy_unavailable()
+        self.client.force_authenticate(self.librarian)
+        response = self.client.post(
+            f"/api/books/{self.book.id}/queue/", {"reader_id": "abc"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_issue_list_rejects_non_integer_reader_id(self):
+        self.client.force_authenticate(self.librarian)
+        response = self.client.get("/api/issues/", {"reader_id": "abc"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_promotion_skips_copy_that_is_not_available(self):
+        self.copy.status = models.BookCopy.Status.RETIRED
+        self.copy.save(update_fields=["status"])
+        reservation = models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            status=models.Reservation.Status.PENDING,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() + timedelta(hours=48),
+            active_slot=1,
+        )
+        promoted = services._promote_next(self.book, self.copy)
+        self.assertIsNone(promoted)
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.status, models.Reservation.Status.PENDING)
+        self.assertIsNone(reservation.copy_id)

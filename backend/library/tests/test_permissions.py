@@ -172,6 +172,20 @@ class UserManagementTests(LibraryTestCase):
             409,
         )
 
+    def test_put_requires_full_update_payload(self):
+        self.client.force_authenticate(self.admin)
+        partial = self.client.put(
+            f"/api/users/{self.reader.id}/", {"status": models.Reader.Status.BLOCKED}, format="json"
+        )
+        self.assertEqual(partial.status_code, 400)
+
+        full = self.client.put(
+            f"/api/users/{self.reader.id}/",
+            {"role": roles.LIBRARIAN_ROLE, "status": models.Reader.Status.ACTIVE},
+            format="json",
+        )
+        self.assertEqual(full.status_code, 200)
+
     def test_duplicate_readers_route_is_removed(self):
         self.client.force_authenticate(self.admin)
         self.assertEqual(self.client.get("/api/readers/").status_code, 404)
@@ -181,6 +195,18 @@ class UserManagementTests(LibraryTestCase):
         self.assertEqual(
             self.client.get(f"/api/readers/{self.reader.id}/issues/").status_code, 200
         )
+
+
+class ReaderIssuesAccessTests(LibraryTestCase):
+    def test_missing_reader_returns_404_not_403(self):
+        self.client.force_authenticate(self.reader)
+        response = self.client.get("/api/readers/999999/issues/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_other_reader_issues_return_403(self):
+        self.client.force_authenticate(self.reader)
+        response = self.client.get(f"/api/readers/{self.other_reader.id}/issues/")
+        self.assertEqual(response.status_code, 403)
 
 
 class LibrarianReaderSearchTests(LibraryTestCase):

@@ -11,6 +11,8 @@ from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from library import models, roles, services
 from library.tests.base import LibraryTestCase, _ensure_group
@@ -74,6 +76,21 @@ class AuthTests(LibraryTestCase):
         self.assertIn("exp", payload)
         self.assertIn("iat", payload)
         self.assertEqual(payload["exp"] - payload["iat"], 900)
+
+    def test_token_endpoint_uses_scoped_throttle(self):
+        self.assertIn(ScopedRateThrottle, TokenObtainPairView.throttle_classes)
+        throttles = TokenObtainPairView().get_throttles()
+        self.assertTrue(
+            any(getattr(throttle, "scope", None) == "token" for throttle in throttles)
+        )
+
+    def test_create_superuser_can_use_admin(self):
+        admin = models.Reader.objects.create_superuser(
+            email="root@test.local", password="RootPass123", full_name="Root"
+        )
+        self.assertTrue(admin.is_staff)
+        self.assertTrue(admin.is_superuser)
+        self.assertTrue(admin.is_active)
 
     def test_blocked_reader_cannot_get_token(self):
         self.reader.status = models.Reader.Status.BLOCKED

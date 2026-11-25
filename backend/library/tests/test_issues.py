@@ -12,8 +12,9 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
 
-from library import models, roles, services
+from library import constants, models, roles, services
 from library.tests.base import LibraryTestCase, _ensure_group
+from library.transitions import Conflict
 
 
 class IssueTests(LibraryTestCase):
@@ -201,3 +202,96 @@ class IssueTests(LibraryTestCase):
             with self.subTest(payload=payload):
                 response = self.client.post("/api/issues/", payload, format="json")
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reserved_copy_is_issued_only_to_its_reserved_reader(self):
+        second_copy = models.BookCopy.objects.create(
+            book=self.book, inventory_number="INV-RESERVED-2"
+        )
+        first_issue = services.issue_copy(
+            self.reader.id, self.copy.id, user=self.librarian
+        )
+        services.return_issue(first_issue.id, user=self.librarian)
+        second_issue = services.issue_copy(
+            self.other_reader.id, second_copy.id, user=self.librarian
+        )
+        services.return_issue(second_issue.id, user=self.librarian)
+
+        with self.assertRaises(Conflict):
+            services.issue_copy(self.reader.id, second_copy.id, user=self.librarian)
+
+        self.copy.refresh_from_db()
+        second_copy.refresh_from_db()
+        self.assertEqual(self.copy.status, models.BookCopy.Status.RESERVED)
+        self.assertEqual(second_copy.status, models.BookCopy.Status.RESERVED)
+        reservation_a = models.Reservation.objects.get(reader=self.reader)
+        reservation_b = models.Reservation.objects.get(reader=self.other_reader)
+        self.assertEqual(reservation_a.copy_id, self.copy.id)
+        self.assertEqual(reservation_b.copy_id, second_copy.id)
+        self.assertEqual(reservation_a.status, models.Reservation.Status.ACTIVE)
+        self.assertEqual(reservation_b.status, models.Reservation.Status.ACTIVE)
+        self.assertEqual(models.Issue.objects.count(), 2)
+
+    def test_issue_due_at_uses_the_same_clock_as_issued_at(self):
+        base = dt_timezone.now()
+        later = base + timedelta(seconds=1)
+        with patch(
+            "library.services.timezone.now", side_effect=[base, base, later]
+        ):
+            issue = services.issue_copy(self.reader.id, self.copy.id)
+        self.assertEqual(issue.due_at - issue.issued_at, constants.LOAN_PERIOD)
+
+    def test_cancel_reservation_rejects_copy_changed_after_lock(self):
+        other_copy = models.BookCopy.objects.create(
+            book=self.book, inventory_number="INV-OTHER-LOCK"
+        )
+        reservation = models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            copy=self.copy,
+            status=models.Reservation.Status.ACTIVE,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() + timedelta(hours=48),
+            active_slot=1,
+        )
+        original_lock = services._lock_reservation
+
+        def lock_with_changed_copy(reservation_id):
+            locked = original_lock(reservation_id)
+            locked.copy_id = other_copy.id
+            return locked
+
+        with patch("library.services._lock_reservation", side_effect=lock_with_changed_copy):
+            with self.assertRaises(Conflict):
+                services.cancel_reservation(reservation.id)
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.status, models.Reservation.Status.ACTIVE)
+
+    def test_expire_reservation_skips_copy_changed_after_lock(self):
+        other_copy = models.BookCopy.objects.create(
+            book=self.book, inventory_number="INV-OTHER-EXPIRE"
+        )
+        self.copy.status = models.BookCopy.Status.RESERVED
+        self.copy.save(update_fields=["status"])
+        reservation = models.Reservation.objects.create(
+            reader=self.reader,
+            book=self.book,
+            copy=self.copy,
+            status=models.Reservation.Status.ACTIVE,
+            queue_date=timezone.now(),
+            expires_at=timezone.now() - timedelta(hours=1),
+            active_slot=1,
+        )
+        original_lock = services._lock_reservation
+
+        def lock_with_changed_copy(reservation_id):
+            locked = original_lock(reservation_id)
+            locked.copy_id = other_copy.id
+            return locked
+
+        with patch("library.services._lock_reservation", side_effect=lock_with_changed_copy):
+            processed = services.expire_reservations(self.book.id)
+        self.assertEqual(processed, [])
+        reservation.refresh_from_db()
+        self.copy.refresh_from_db()
+        self.assertEqual(reservation.status, models.Reservation.Status.ACTIVE)
+        self.assertEqual(self.copy.status, models.BookCopy.Status.RESERVED)
