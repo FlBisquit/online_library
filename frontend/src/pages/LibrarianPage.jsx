@@ -25,9 +25,13 @@ export const LibrarianPage = () => {
   const [readerQuery, setReaderQuery] = useState("");
   const [readerOptions, setReaderOptions] = useState([]);
   const [readerId, setReaderId] = useState(null);
+  const [searchingReaders, setSearchingReaders] = useState(false);
+  const [readersSearched, setReadersSearched] = useState(false);
   const [bookQuery, setBookQuery] = useState("");
   const [bookOptions, setBookOptions] = useState([]);
   const [bookId, setBookId] = useState(null);
+  const [searchingBooks, setSearchingBooks] = useState(false);
+  const [booksSearched, setBooksSearched] = useState(false);
   const [copies, setCopies] = useState([]);
   const [copyId, setCopyId] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -94,13 +98,35 @@ export const LibrarianPage = () => {
   }, [bookId]);
 
   const searchReaders = async () => {
-    const data = await apiClient.get("/users/", { params: { search: readerQuery, limit: 20 } });
-    setReaderOptions(data.results ?? []);
+    setSearchingReaders(true);
+    setReadersSearched(true);
+    setError(null);
+    try {
+      const data = await apiClient.get("/readers/search/", {
+        params: { search: readerQuery, limit: 20 },
+      });
+      setReaderOptions(data.results ?? []);
+    } catch (e) {
+      setReaderOptions([]);
+      setError(extractGeneralError(e));
+    } finally {
+      setSearchingReaders(false);
+    }
   };
 
   const searchBooks = async () => {
-    const data = await apiClient.get("/books/", { params: { search: bookQuery, limit: 20 } });
-    setBookOptions(data.results ?? []);
+    setSearchingBooks(true);
+    setBooksSearched(true);
+    setError(null);
+    try {
+      const data = await apiClient.get("/books/", { params: { search: bookQuery, limit: 20 } });
+      setBookOptions(data.results ?? []);
+    } catch (e) {
+      setBookOptions([]);
+      setError(extractGeneralError(e));
+    } finally {
+      setSearchingBooks(false);
+    }
   };
 
   const handleIssue = async (event) => {
@@ -181,6 +207,24 @@ export const LibrarianPage = () => {
           Выдачи
         </button>
         <button
+          className={`nav-item ${activeTab === "issues" && dueFilter === "today" ? "active" : ""}`}
+          onClick={() => {
+            setDueFilter("today");
+            setActiveTab("issues");
+          }}
+        >
+          Выдачи на сегодня
+        </button>
+        <button
+          className={`nav-item ${activeTab === "issues" && dueFilter === "overdue" ? "active" : ""}`}
+          onClick={() => {
+            setDueFilter("overdue");
+            setActiveTab("issues");
+          }}
+        >
+          Просроченные
+        </button>
+        <button
           className={`nav-item ${activeTab === "waiting" ? "active" : ""}`}
           onClick={() => setActiveTab("waiting")}
         >
@@ -210,14 +254,24 @@ export const LibrarianPage = () => {
                   placeholder="Иванов Иван Иванович"
                 />
               </label>
-              <button className="btn btn-secondary" type="button" onClick={searchReaders}>
-                Найти читателя
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={searchingReaders}
+                onClick={searchReaders}
+              >
+                {searchingReaders ? "Поиск..." : "Найти читателя"}
               </button>
+              {searchingReaders && <div className="loading">Поиск читателей...</div>}
+              {readersSearched && !searchingReaders && readerOptions.length === 0 && (
+                <div className="empty">Читатели не найдены.</div>
+              )}
               <select className="input" value={readerId} onChange={(event) => setReaderId(event.target.value)}>
                 <option value="">Выберите читателя</option>
                 {readerOptions.map((reader) => (
                   <option key={reader.id} value={reader.id}>
                     {reader.full_name} ({reader.email})
+                    {reader.status === "BLOCKED" ? " — заблокирован" : ""}
                   </option>
                 ))}
               </select>
@@ -231,9 +285,18 @@ export const LibrarianPage = () => {
                   placeholder="Название книги"
                 />
               </label>
-              <button className="btn btn-secondary" type="button" onClick={searchBooks}>
-                Найти книгу
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={searchingBooks}
+                onClick={searchBooks}
+              >
+                {searchingBooks ? "Поиск..." : "Найти книгу"}
               </button>
+              {searchingBooks && <div className="loading">Поиск книг...</div>}
+              {booksSearched && !searchingBooks && bookOptions.length === 0 && (
+                <div className="empty">Книги не найдены.</div>
+              )}
               <select className="input" value={bookId} onChange={(event) => setBookId(event.target.value)}>
                 <option value="">Выберите книгу</option>
                 {bookOptions.map((book) => (
@@ -267,7 +330,13 @@ export const LibrarianPage = () => {
           </section>
 
           <section>
-            <h3>Выдачи</h3>
+            <h3>
+              {dueFilter === "today"
+                ? "Выдачи на сегодня"
+                : dueFilter === "overdue"
+                  ? "Просроченные"
+                  : "Выдачи"}
+            </h3>
             <form
               className="filter-row log-filters"
               onSubmit={(event) => {
@@ -310,7 +379,17 @@ export const LibrarianPage = () => {
             </form>
 
             {loadingIssues && <Loading message="Загрузка выдач..." />}
-            {!loadingIssues && issues.length === 0 && <EmptyState message="Выдачи не найдены." />}
+            {!loadingIssues && issues.length === 0 && (
+              <EmptyState
+                message={
+                  dueFilter === "today"
+                    ? "Выдач на сегодня нет."
+                    : dueFilter === "overdue"
+                      ? "Просроченных выдач нет."
+                      : "Выдачи не найдены."
+                }
+              />
+            )}
             <div className="book-list">
               {issues.map((issue) => (
                 <div key={issue.id} className="book-card">
