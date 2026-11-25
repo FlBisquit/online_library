@@ -84,7 +84,10 @@ def find_or_create_readers(base_url, token):
 def find_or_create_copy(base_url, token):
     for book in get_results(base_url, "/books/?limit=100", token):
         for copy in get_results(base_url, f"/books/{book['id']}/copies/?limit=100", token):
-            if copy.get("status") == "AVAILABLE":
+            if copy.get("status") != "AVAILABLE":
+                continue
+            # A copy with issue history would make the final count ambiguous.
+            if count_issues(base_url, token, copy["inventory_number"]) == 0:
                 return book, copy
 
     suffix = uuid.uuid4().hex[:12]
@@ -92,7 +95,7 @@ def find_or_create_copy(base_url, token):
         base_url,
         "POST",
         "/books/",
-        {"title": f"Concurrency test book {suffix}", "isbn": f"978-5-{suffix}-1-1"},
+        {"title": f"Concurrency test book {suffix}", "isbn": f"9785{suffix}1"},
         token=token,
     )
     if code != 201:
