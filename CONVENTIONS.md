@@ -25,3 +25,6 @@
   доступности; порядок блокировок: Book → BookCopy → Reservation → Issue.
 - Конкурентные тесты запускать только на MySQL и в `TransactionTestCase`;
   SQLite не поддерживает `SELECT FOR UPDATE` и даёт `database is locked`.
+- Не вызывать `to_representation()` вручную у `ListSerializer`: при `many=True`
+  он ожидает список, а не один объект; сериализовать каждый объект отдельно
+  или использовать `Serializer(instance, many=True).data`.
