@@ -123,6 +123,14 @@ python manage.py load_demo_data
 | Читатель      | reader0@library.local    | ReaderPass123   |
 | ...           | reader1..7@library.local | ReaderPass123   |
 
+## Manual scenario
+
+1. Читатель входит в очередь на книгу (`POST /api/books/<book_id>/queue/` или UI кабинета).
+2. Библиотекарь принимает возврат выданной книги (`POST /api/issues/<issue_id>/return/`).
+3. У читателя в кабинете появляется запись «Мои очереди и брони»: книга ждёт его, позиция и время ожидания.
+4. Библиотекарь выдаёт книгу из очереди (`POST /api/issues/` с нужным `reader_id` и `copy_id`).
+5. У читателя в разделе «Сейчас на руках» книга отображается с названием и сроком, при просрочке — красной отметкой.
+
 ## Environment variables (backend/.env)
 
 ```
