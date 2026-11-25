@@ -14,10 +14,11 @@
 - `2dfb338` Fix reservation ownership and retired copy state bugs
 - `09f0b18` Fix validation, throttle, reports and demo data bugs
 - `8610ca6` Fix reader return button and download token refresh
+- `0dabbfd` Reconcile process docs with audit fixes and final verification
 
 Правки документов (`AI_LOG.md`, `AI_REVIEW.md`, `PLAN.md`, `SPEC.md`, `API_DESIGN.md`
-и этой карточки) фиксируются следующим коммитом после `8610ca6`; его хеш не может
-быть указан внутри него самого и будет подхвачен следующей сверкой логов.
+и этой карточки) зафиксированы коммитом `0dabbfd`. Коммит со сверкой логов,
+добавляющий этот хеш в индекс, не может указать собственный хеш внутри себя.
 
 ## Ход работы
 
