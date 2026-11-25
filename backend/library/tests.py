@@ -1200,6 +1200,10 @@ class QueueBehaviorTests(LibraryTestCase):
         self.assertEqual(response.data["results"][0]["position"], 1)
         self.assertEqual(response.data["results"][0]["book"]["title"], self.book.title)
         self.assertEqual(response.data["results"][0]["copy"]["inventory_number"], "INV-1")
+        self.assertEqual(
+            response.data["results"][0]["reader"]["full_name"],
+            self.reader.full_name,
+        )
 
     def test_me_reservations_returns_own_reservation_with_position(self):
         self._make_copy_unavailable()

@@ -273,6 +273,7 @@ class ReservationSerializer(serializers.ModelSerializer):
     )
     book_id = serializers.PrimaryKeyRelatedField(source="book", queryset=models.Book.objects.all())
     book = serializers.SerializerMethodField(source="book")
+    reader = serializers.SerializerMethodField(source="reader")
     copy = serializers.SerializerMethodField(source="copy")
     position = serializers.SerializerMethodField(source="pk")
     total = serializers.SerializerMethodField(source="pk")
@@ -283,6 +284,7 @@ class ReservationSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "reader_id",
+            "reader",
             "book_id",
             "book",
             "copy",
@@ -294,6 +296,9 @@ class ReservationSerializer(serializers.ModelSerializer):
             "total",
         ]
         read_only_fields = ["id", "status", "queue_date", "expires_at", "copy", "active_slot"]
+
+    def get_reader(self, obj):
+        return {"id": obj.reader_id, "full_name": obj.reader.full_name}
 
     def get_book(self, obj):
         return {"id": obj.book_id, "title": obj.book.title}
