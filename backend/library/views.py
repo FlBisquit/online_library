@@ -428,7 +428,15 @@ class IssueListView(generics.ListCreateAPIView):
                 {"detail": "Необходимо передать reader_id и copy_id."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        issue = services.issue_copy(reader_id, copy_id, user=request.user)
+        try:
+            reader_pk = int(reader_id)
+            copy_pk = int(copy_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "reader_id и copy_id должны быть целыми числами."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        issue = services.issue_copy(reader_pk, copy_pk, user=request.user)
         serializer = IssueSerializer(issue, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
