@@ -3,6 +3,7 @@ import csv
 from datetime import date
 
 from django.http import Http404, HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -90,6 +91,8 @@ def _parse_report_period(params):
         raise ValidationError({"date_to": "Обязательный параметр."})
     if date_from > date_to:
         raise ValidationError({"date_from": "date_from не может быть позже date_to."})
+    if date_to == date.max:
+        raise ValidationError({"date_to": "date_to слишком большая для отчёта."})
     return date_from, date_to
 
 
@@ -114,14 +117,16 @@ class BookListCreateView(generics.ListCreateAPIView):
                 | models.Q(description__icontains=search)
                 | models.Q(publisher__icontains=search)
             )
-        author_id = self.request.query_params.get("author")
-        if author_id:
+        author_id = _parse_int_param(self.request.query_params.get("author"), "author")
+        if author_id is not None:
             queryset = queryset.filter(bookauthor__author_id=author_id).distinct()
-        genre_id = self.request.query_params.get("genre")
-        if genre_id:
+        genre_id = _parse_int_param(self.request.query_params.get("genre"), "genre")
+        if genre_id is not None:
             queryset = queryset.filter(bookgenre__genre_id=genre_id).distinct()
-        publication_year = self.request.query_params.get("publication_year")
-        if publication_year:
+        publication_year = _parse_int_param(
+            self.request.query_params.get("publication_year"), "publication_year"
+        )
+        if publication_year is not None:
             queryset = queryset.filter(publication_year=publication_year)
         return queryset
 
@@ -170,7 +175,7 @@ class BookCopyListCreateView(generics.ListCreateAPIView):
         return queryset
 
     def perform_create(self, serializer):
-        book = models.Book.objects.get(pk=self.kwargs.get("book_id"))
+        book = get_object_or_404(models.Book, pk=self.kwargs.get("book_id"))
         serializer.save(book=book)
 
 
@@ -341,7 +346,9 @@ class ReaderIssuesView(APIView):
 
     def get(self, request, *args, **kwargs):
         reader = _get_reader_or_none(self.kwargs.get("pk"))
-        if reader is None or not _can_access_reader(request.user, reader):
+        if reader is None:
+            raise Http404
+        if not _can_access_reader(request.user, reader):
             return Response(
                 {"detail": "Недостаточно прав доступа."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -399,8 +406,8 @@ class IssueListView(generics.ListCreateAPIView):
         status_value = self.request.query_params.get("status")
         if status_value:
             queryset = queryset.filter(status=status_value)
-        reader_id = self.request.query_params.get("reader_id")
-        if reader_id:
+        reader_id = _parse_int_param(self.request.query_params.get("reader_id"), "reader_id")
+        if reader_id is not None:
             queryset = queryset.filter(reader_id=reader_id)
         due_value = self.request.query_params.get("due")
         if due_value:
@@ -486,7 +493,11 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         target = self.get_object()
-        serializer = UserUpdateSerializer(data=request.data, partial=True)
+        serializer = UserUpdateSerializer(
+            data=request.data,
+            partial=kwargs.get("partial", False),
+            require_all=request.method == "PUT",
+        )
         serializer.is_valid(raise_exception=True)
         updated = user_services.update_user(
             target_id=target.pk,
@@ -574,8 +585,8 @@ class BookQueueListCreateView(APIView):
         book_id = self.kwargs.get("book_id")
         if not models.Book.objects.filter(pk=book_id).exists():
             return Response({"detail": "Книга не найдена."}, status=status.HTTP_404_NOT_FOUND)
-        reader_id = request.data.get("reader_id")
-        if not reader_id:
+        reader_id = _parse_int_param(request.data.get("reader_id"), "reader_id")
+        if reader_id is None:
             return Response(
                 {"detail": "Необходимо передать reader_id."},
                 status=status.HTTP_400_BAD_REQUEST,

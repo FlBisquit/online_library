@@ -452,7 +452,9 @@ class Command(BaseCommand):
             copies = {}
             for copy_number in range(1, spec["copies"] + 1):
                 inventory_number = f"DEMO-{index:03d}-{copy_number}"
-                copy, _created = models.BookCopy.objects.update_or_create(
+                # Повторный запуск не должен сбрасывать ISSUED/RESERVED/LOST:
+                # статус восстанавливается из выдач и броней в конце загрузки.
+                copy, _created = models.BookCopy.objects.get_or_create(
                     book=book,
                     inventory_number=inventory_number,
                     defaults={"status": models.BookCopy.Status.AVAILABLE},
@@ -466,6 +468,36 @@ class Command(BaseCommand):
 
         self._ensure_issues()
         self._ensure_reservations()
+        self._reconcile_copy_statuses()
+
+    def _reconcile_copy_statuses(self):
+        """Привести статусы экземпляров в соответствие с выдачами и бронями."""
+        for copy in models.BookCopy.objects.all():
+            open_issue = models.Issue.objects.filter(
+                copy=copy,
+                status__in=[
+                    models.Issue.Status.ISSUED,
+                    models.Issue.Status.OVERDUE,
+                ],
+            ).exists()
+            lost_issue = models.Issue.objects.filter(
+                copy=copy, status=models.Issue.Status.LOST
+            ).exists()
+            active_reservation = models.Reservation.objects.filter(
+                copy=copy,
+                status=models.Reservation.Status.ACTIVE,
+                active_slot=1,
+            ).exists()
+            if lost_issue:
+                status = models.BookCopy.Status.LOST
+            elif open_issue:
+                status = models.BookCopy.Status.ISSUED
+            elif active_reservation:
+                status = models.BookCopy.Status.RESERVED
+            else:
+                status = models.BookCopy.Status.AVAILABLE
+            if copy.status != status:
+                models.BookCopy.objects.filter(pk=copy.pk).update(status=status)
 
     # ---------- Выдачи ----------
 
@@ -536,7 +568,8 @@ class Command(BaseCommand):
                 copy=copy,
                 expires_at=timezone.now() + RESERVATION_PERIOD,
             )
-            services.change_status(copy, models.BookCopy.Status.RESERVED, user=self._librarian)
+            if copy.status == models.BookCopy.Status.AVAILABLE:
+                services.change_status(copy, models.BookCopy.Status.RESERVED, user=self._librarian)
         return reservation
 
     def _ensure_reservation_cancelled(self, reader, book):

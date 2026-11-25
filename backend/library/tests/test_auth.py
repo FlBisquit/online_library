@@ -12,9 +12,9 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.throttling import ScopedRateThrottle
-from rest_framework_simplejwt.views import TokenObtainPairView
 
 from library import models, roles, services
+from library.urls import ScopedTokenObtainPairView
 from library.tests.base import LibraryTestCase, _ensure_group
 
 
@@ -78,11 +78,11 @@ class AuthTests(LibraryTestCase):
         self.assertEqual(payload["exp"] - payload["iat"], 900)
 
     def test_token_endpoint_uses_scoped_throttle(self):
-        self.assertIn(ScopedRateThrottle, TokenObtainPairView.throttle_classes)
-        throttles = TokenObtainPairView().get_throttles()
-        self.assertTrue(
-            any(getattr(throttle, "scope", None) == "token" for throttle in throttles)
-        )
+        self.assertIn(ScopedRateThrottle, ScopedTokenObtainPairView.throttle_classes)
+        view = ScopedTokenObtainPairView()
+        throttles = view.get_throttles()
+        self.assertEqual(view.throttle_scope, "token")
+        self.assertTrue(any(isinstance(throttle, ScopedRateThrottle) for throttle in throttles))
 
     def test_create_superuser_can_use_admin(self):
         admin = models.Reader.objects.create_superuser(

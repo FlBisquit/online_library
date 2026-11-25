@@ -16,7 +16,7 @@ CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
 def safe_csv_value(value):
     """Значения, начинающиеся с формулы, экранируются апострофом для Excel."""
     text = "" if value is None else str(value)
-    if text.startswith(CSV_FORMULA_PREFIXES):
+    if text.lstrip().startswith(CSV_FORMULA_PREFIXES):
         return f"'{text}"
     return text
 
@@ -39,7 +39,10 @@ def write_books_report_csv(rows, writer):
 def period_bounds(date_from, date_to):
     """Полуоткрытый интервал [дата_с, дата_по + 1 день) в UTC."""
     start = datetime.combine(date_from, time.min, tzinfo=dt_timezone.utc)
-    end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=dt_timezone.utc)
+    try:
+        end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=dt_timezone.utc)
+    except OverflowError as exc:
+        raise ValueError("date_to слишком большая для отчёта.") from exc
     return start, end
 
 

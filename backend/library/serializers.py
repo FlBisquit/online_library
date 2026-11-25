@@ -222,6 +222,12 @@ class UserUpdateSerializer(serializers.Serializer):
         required=False,
     )
 
+    def __init__(self, *args, require_all=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if require_all:
+            for name in ("role", "status"):
+                self.fields[name].required = True
+
     def validate(self, attrs):
         if not attrs:
             raise serializers.ValidationError("Укажите role или status.")

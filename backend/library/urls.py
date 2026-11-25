@@ -6,13 +6,17 @@ from rest_framework_simplejwt.views import (
 )
 from rest_framework.throttling import ScopedRateThrottle
 
-TokenObtainPairView.throttling_class = ScopedRateThrottle
-TokenObtainPairView.throttle_scope = "token"
+class ScopedTokenObtainPairView(TokenObtainPairView):
+    """Логин ограничен отдельным scope вместо глобальных anon/user."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "token"
+
 
 from library import views
 
 urlpatterns = [
-    path("token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("token/", ScopedTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("token/blacklist/", TokenBlacklistView.as_view(), name="token_blacklist"),
     path("auth/register/", views.RegisterView.as_view(), name="auth-register"),
