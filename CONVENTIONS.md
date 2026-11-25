@@ -36,3 +36,6 @@
   на чистой БД без демо-данных.
 - `BASE_DIR` в `backend/config/settings.py` — папка `backend`
   (`Path(__file__).resolve().parent.parent`); `.env` читается только оттуда.
+- Любая правка схемы — только через миграцию (`makemigrations`), включая
+  констрейнты и backfill существующих строк; перед коммитом —
+  `makemigrations --check --dry-run`.
