@@ -3,10 +3,10 @@
 ## Backend (Django / DRF)
 
 - Имя и структура моделей, миграции, сериализаторы, views follow Django REST Framework conventions.
-- Бизнес-логика выдачи/возврата/очереди — в `library/services.py`, транзакции с `select_for_update`.
+- Бизнес-логика выдачи/возврата/очереди — в пакете `library/services/`, транзакции с `select_for_update`.
 - Роли: группы `reader`, `librarian`, `admin`; проверки через `library/permissions.py`.
 - Статусы: `TextChoices` внутри моделей, CHECK-ограничения.
-- Тесты: `library/tests.py`, DRF APITestCase + APIClient, MySQL.
+- Тесты: пакет `library/tests/`, DRF APITestCase + APIClient, MySQL.
 
 ## Frontend (React)
 
