@@ -45,6 +45,7 @@ class BookSerializer(serializers.ModelSerializer):
             "isbn",
             "publication_year",
             "publisher",
+            "cover_url",
             "authors",
             "genres",
         ]

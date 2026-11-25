@@ -125,6 +125,7 @@ class Book(models.Model):
     isbn = models.CharField(max_length=20, unique=True)
     publication_year = models.IntegerField(null=True, blank=True)
     publisher = models.CharField(max_length=200, null=True, blank=True)
+    cover_url = models.URLField(max_length=500, null=True, blank=True)
 
     authors = models.ManyToManyField(Author, through="BookAuthor")
     genres = models.ManyToManyField(Genre, through="BookGenre")
