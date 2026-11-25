@@ -786,9 +786,9 @@ class IssueTests(LibraryTestCase):
         self.assertEqual(overdue.status_code, status.HTTP_200_OK)
         self.assertEqual(len(overdue.data["results"]), 2)
 
-        found = self.client.get("/api/issues/", {"search": "Читатель"})
+        found = self.client.get("/api/issues/", {"search": "Второй Читатель"})
         self.assertEqual(found.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(found.data["results"]), 2)
+        self.assertEqual(len(found.data["results"]), 1)
 
     def test_return_issue_successful(self):
         issue = models.Issue.objects.create(

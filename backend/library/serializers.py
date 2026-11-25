@@ -228,17 +228,29 @@ class UserUpdateSerializer(serializers.Serializer):
 
 
 class IssueSerializer(serializers.ModelSerializer):
-    """Сериализатор выдачи книги."""
+    """Сериализатор выдачи книги: человекочитаемые вложенные данные."""
 
     reader_id = serializers.PrimaryKeyRelatedField(
         source="reader", queryset=models.Reader.objects.all()
     )
     copy_id = serializers.PrimaryKeyRelatedField(source="copy", queryset=models.BookCopy.objects.all())
+    book = serializers.SerializerMethodField(source="copy")
+    reader = serializers.SerializerMethodField(source="reader")
+    copy = serializers.SerializerMethodField(source="copy")
 
     class Meta:
         model = models.Issue
-        fields = ["id", "reader", "reader_id", "copy", "copy_id", "issued_at", "due_at", "returned_at", "status"]
+        fields = ["id", "reader_id", "copy_id", "book", "reader", "copy", "issued_at", "due_at", "returned_at", "status"]
         read_only_fields = ["id", "issued_at", "due_at", "returned_at", "status"]
+
+    def get_book(self, obj):
+        return {"id": obj.copy.book_id, "title": obj.copy.book.title}
+
+    def get_reader(self, obj):
+        return {"id": obj.reader_id, "full_name": obj.reader.full_name}
+
+    def get_copy(self, obj):
+        return {"inventory_number": obj.copy.inventory_number}
 
     def create(self, validated_data):
         reader = validated_data["reader"]
@@ -260,22 +272,75 @@ class ReservationSerializer(serializers.ModelSerializer):
         source="reader", queryset=models.Reader.objects.all()
     )
     book_id = serializers.PrimaryKeyRelatedField(source="book", queryset=models.Book.objects.all())
+    book = serializers.SerializerMethodField(source="book")
+    copy = serializers.SerializerMethodField(source="copy")
+    position = serializers.SerializerMethodField(source="pk")
+    total = serializers.SerializerMethodField(source="pk")
+    expires_at = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = models.Reservation
         fields = [
             "id",
-            "reader",
             "reader_id",
-            "book",
             "book_id",
+            "book",
             "copy",
             "status",
             "queue_date",
             "expires_at",
             "active_slot",
+            "position",
+            "total",
         ]
         read_only_fields = ["id", "status", "queue_date", "expires_at", "copy", "active_slot"]
+
+    def get_book(self, obj):
+        return {"id": obj.book_id, "title": obj.book.title}
+
+    def get_copy(self, obj):
+        if obj.copy is None:
+            return None
+        return {"inventory_number": obj.copy.inventory_number}
+
+    def get_position(self, obj):
+        if obj.status not in (
+            models.Reservation.Status.PENDING,
+            models.Reservation.Status.ACTIVE,
+        ):
+            return None
+        reservations = (
+            models.Reservation.objects.filter(
+                book_id=obj.book_id,
+                status__in=[
+                    models.Reservation.Status.PENDING,
+                    models.Reservation.Status.ACTIVE,
+                ],
+            )
+            .order_by("queue_date", "id")
+        )
+        position = 0
+        for reservation in reservations:
+            position += 1
+            if reservation.pk == obj.pk:
+                return position
+        return None
+
+    def get_total(self, obj):
+        if obj.status not in (
+            models.Reservation.Status.PENDING,
+            models.Reservation.Status.ACTIVE,
+        ):
+            return None
+        return (
+            models.Reservation.objects.filter(
+                book_id=obj.book_id,
+                status__in=[
+                    models.Reservation.Status.PENDING,
+                    models.Reservation.Status.ACTIVE,
+                ],
+            ).count()
+        )
 
     def create(self, validated_data):
         reader = validated_data["reader"]

@@ -3,6 +3,7 @@ import csv
 from datetime import date
 
 from django.http import Http404, HttpResponse
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -344,6 +345,28 @@ class MeView(APIView):
         return Response(serializer.data)
 
 
+class MeReservationsView(APIView):
+    """Брони и очереди текущего читателя с позицией."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        services.mark_overdue()
+        reservations = (
+            models.Reservation.objects.filter(
+                reader=request.user,
+                status__in=[
+                    models.Reservation.Status.PENDING,
+                    models.Reservation.Status.ACTIVE,
+                ],
+            )
+            .select_related("reader", "book", "copy")
+            .order_by("-queue_date", "-id")
+        )
+        serializer = ReservationSerializer(reservations, many=True, context={"request": request})
+        return Response(serializer.data)
+
+
 class IssueListView(generics.ListCreateAPIView):
     """Список выдач с фильтрацией (GET) и создание выдачи (POST, библиотекарь/администратор)."""
 
@@ -362,6 +385,22 @@ class IssueListView(generics.ListCreateAPIView):
         reader_id = self.request.query_params.get("reader_id")
         if reader_id:
             queryset = queryset.filter(reader_id=reader_id)
+        due_value = self.request.query_params.get("due")
+        if due_value:
+            if due_value == "today":
+                queryset = queryset.filter(due_at__date=timezone.now().date())
+            elif due_value == "overdue":
+                queryset = queryset.filter(due_at__lt=timezone.now())
+            else:
+                raise ValidationError({"due": "Допустимые значения: today, overdue."})
+        search_value = self.request.query_params.get("search")
+        if search_value:
+            queryset = queryset.filter(
+                models.Q(reader__full_name__icontains=search_value)
+                | models.Q(reader__email__icontains=search_value)
+                | models.Q(copy__book__title__icontains=search_value)
+                | models.Q(copy__inventory_number__icontains=search_value)
+            )
         return queryset
 
     def create(self, request, *args, **kwargs):
@@ -584,6 +623,21 @@ class BookQueuePositionView(APIView):
                 "status": status_value,
             }
         )
+
+
+class ReservationListView(generics.ListAPIView):
+    """Список бронирований для сотрудников (ожидание выдачи)."""
+
+    serializer_class = ReservationSerializer
+    permission_classes = [IsLibrarianOrAdmin]
+    pagination_class = CatalogPagination
+
+    def get_queryset(self):
+        queryset = models.Reservation.objects.select_related("reader", "book", "copy").all()
+        status_value = self.request.query_params.get("status")
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        return queryset.order_by("queue_date", "id")
 
 
 class ReservationDetailView(APIView):
